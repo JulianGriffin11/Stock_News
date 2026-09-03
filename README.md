@@ -8,7 +8,7 @@ A personal, once-a-week email of the most useful news and filings for a small na
 
 **Keep**
 
-- RSS per ticker (Yahoo Finance + Google News search RSS). Volume is enough for 5–15 names.
+- RSS per ticker (Yahoo Finance). Volume is enough for 5–15 names. Google News search RSS was tried in the spike and dropped — it often returns an empty feed to a script.
 - SEC EDGAR (official `data.sec.gov` submissions, not a paid “SEC API”). Filter to **8-K, 10-Q, 10-K, Form 4**. This is the investor-specific signal RSS misses.
 - Three-agent LLM pipeline: summarize → rank → write email.
 - Supabase Postgres, OpenAI, Resend, GitHub Actions weekly cron.
@@ -96,7 +96,7 @@ flowchart LR
   mail --> resend[Resend]
 ```
 
-1. **Ingest** — For each ticker, pull Yahoo + Google News RSS (feedparser) and SEC recent filings. Store text we can legally/easily get: RSS title + summary + link (no full-article scrape), SEC 8-K/10-Q header + first relevant section excerpt (capped, e.g. 8–12k chars). Dedupe on `external_id`. Window: last 7 days.
+1. **Ingest** — For each ticker, pull Yahoo Finance RSS (feedparser) and SEC recent filings. Store text we can legally/easily get: RSS title + summary + link (no full-article scrape), SEC 8-K/10-Q header + first relevant section excerpt (capped, e.g. 8–12k chars). Dedupe on `external_id`. Window: last 7 days.
 2. **Agent 1 (summarize)** — Loop unsummarized `raw_items`. Each call returns short JSON: summary, why it matters to an investor, type. Write `item_summaries`. Cheap model; skip items with empty text.
 3. **Agent 2 (rank)** — One call with this week’s summaries + `ranking_criteria`. Returns top 5–10 ids plus a one-line reason each. Persist on `digest_runs`. If fewer than 5 items exist, send what we have rather than padding.
 4. **Agent 3 (email)** — One call: ranked items + tone → subject + HTML + plaintext. Store, then Resend `emails.send`. Fail the job if send fails.
@@ -169,10 +169,10 @@ Minimal throwaway-quality code is fine here. We can reshape it in Phase 2.
 #### Step 1.1 — Tiny Python runner
 
 - `requirements.txt`: `httpx`, `feedparser`, `python-dotenv`
-- `app/scrapers/rss.py` and `app/scrapers/sec.py`
+- `app/scrapers/yahoo_news.py` and `app/scrapers/sec_filings.py`
 - Hardcode 2–3 tickers for the spike: `NVDA`, `AAPL`, `MSFT`
 - Window: last **7 days**
-- Output: pretty-print to the terminal **and** write `data/rss.json` + `data/sec.json`
+- Output: pretty-print to the terminal **and** write `data/yahoo_news.json` + `data/sec_filings.json`
 - `.gitignore` those output files
 
 #### Step 1.2 — RSS scraper
@@ -180,9 +180,8 @@ Minimal throwaway-quality code is fine here. We can reshape it in Phase 2.
 For each ticker:
 
 - Yahoo Finance: `https://feeds.finance.yahoo.com/rss/2.0/headline?s={TICKER}&region=US&lang=en-US`
-- Google News: `https://news.google.com/rss/search?q={TICKER}+stock&hl=en-US&gl=US&ceid=US:en`
 
-Parse with `feedparser`. Keep `title`, `link`, `published`, `summary`. Filter to the 7-day window. Tag `source=yahoo|google_news` and `ticker`.
+Parse with `feedparser`. Keep `title`, `link`, `published`, `summary`. Filter to the 7-day window. Tag `source=yahoo` and `ticker`.
 
 **Pass criteria:** at least a handful of items across the three tickers. If Yahoo’s RSS is dead/empty, try CNBC/Reuters general feeds filtered by ticker mention, or Yahoo via a different URL — document what actually worked.
 
@@ -201,18 +200,29 @@ SEC requires a descriptive `User-Agent` (name + email). Put it in `.env` as `SEC
 
 Phase 1 is done only when:
 
-- `python -m app.scrapers.rss` prints real headlines with links
-- `python -m app.scrapers.sec` prints real filings with accession numbers
+- `uv run python playground/test_yahoo_news.py` prints real headlines with links
+- `uv run python playground/test_sec_filings.py` prints real filings with accession numbers
 - Both JSON dumps exist and look inspectable
 - This README notes **which URLs actually worked** (feeds change)
 
 If either source is a dead end, pivot the source *before* building the rest of the app.
 
+**Verified 2026-09-03** — both surfaces returned real items. Run from the playground: `uv run python playground/test_yahoo_news.py` and `uv run python playground/test_sec_filings.py`.
+
+| Source | URL | Result |
+|---|---|---|
+| Yahoo Finance RSS | `https://feeds.finance.yahoo.com/rss/2.0/headline?s={TICKER}&region=US&lang=en-US` | Live. Use a descriptive User-Agent (`StockNewsDigest/0.1 …`); a fake browser UA can 429. |
+| Google News RSS | `https://news.google.com/rss/search?q={COMPANY}+stock&hl=en-US&gl=US&ceid=US:en` | Dropped. Often returns HTTP 200 with an empty channel to a script; Yahoo already supplies enough headlines. |
+| SEC ticker → CIK | `https://www.sec.gov/files/company_tickers.json` | Live; cached at `data/company_tickers.json`. |
+| SEC submissions | `https://data.sec.gov/submissions/CIK{cik10}.json` | Live with `SEC_USER_AGENT` set to name + email. |
+
+Did not need Feedspot/RSS.app or CNBC/Reuters fallbacks.
+
 ### Phase 2 — Turn the spike into a real ingest module
 
 Still no Supabase/OpenAI/Resend.
 
-1. Package layout: `app/scrapers/rss.py`, `app/scrapers/sec.py`
+1. Package layout: `app/scrapers/yahoo_news.py`, `app/scrapers/sec_filings.py`
 2. Profile in `app/profiles/` with the real (or placeholder) ticker list — stop hardcoding
 3. Shared item shape: `source`, `ticker`, `title`, `url`, `published_at`, `raw_text`, `external_id`
 4. Dedupe in memory on `external_id` (URL or accession)
@@ -251,6 +261,7 @@ Setup, env vars, how to add tickers, how to run Phase 1 / ingest / full weekly l
 
 ```
 app/
+  config/       # spike watchlist, window, output helpers
   scrapers/     # RSS + SEC — collect fresh content
   agent/        # LLM: summarize, rank, format the digest
   database/     # Postgres helpers (read/write Supabase)
@@ -262,7 +273,8 @@ data/           # local JSON dumps from Phase 1–2
 .github/workflows/  # weekly cron
 ```
 
-- `app/scrapers/rss.py` / `app/scrapers/sec.py`
+- `app/config/settings.py` — watchlist, 7-day window, JSON/print helpers
+- `app/scrapers/yahoo_news.py` / `app/scrapers/sec_filings.py`
 - `app/agent/` — summarize, rank, write email
 - `app/database/` — connection + upsert helpers
 - `app/services/` — cleanup + Resend send + weekly orchestrator
@@ -285,7 +297,6 @@ GitHub Actions + local `.env`, never committed:
 ## Still needed before / during impl
 
 - Real ticker list (spike uses NVDA / AAPL / MSFT)
-- Name + email for the SEC `User-Agent`
 - Later: recipient email, Resend-verified from-address, preferred send day/time
 
 Until then, ship with a placeholder profile in `app/profiles/` that can be edited in one file.
