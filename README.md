@@ -1,6 +1,6 @@
 # Stock News — Weekly Investor Digest
 
-A personal, once-a-week email of the most useful news and filings for a small named watchlist. You are the only user. Config lives in a YAML file, not a signup product.
+A personal, once-a-week email of the most useful news and filings for a small named watchlist. You are the only user. Config lives in `app/profiles/`, not a signup product.
 
 **Build order is inverted on purpose:** prove the two data surfaces first. Do not stand up FastAPI, Supabase, OpenAI, or Resend until ingest is visibly working.
 
@@ -24,23 +24,23 @@ RSS alone usually fills an email. SEC is what makes it *investor* rather than *n
 
 | Piece | Choice | Why |
 |---|---|---|
-| Language | Python 3.12 | Fits FastAPI + ingest + agents |
+| Language | Python 3.12 | Fits FastAPI + scrapers + agent |
 | Jobs | FastAPI + CLI entrypoints | Local trigger (`POST /jobs/weekly` or `python -m digest run-weekly`); no need to host a server |
 | Cron | GitHub Actions `schedule` | Free, secrets, good enough for one weekly run |
 | DB | Supabase Postgres | One project, tables + optional dashboard |
 | LLM | OpenAI | `gpt-4o-mini` for per-item summaries; a stronger model for rank + email |
 | Email | [Resend](https://resend.com) | Simple API, good HTML, free tier is plenty for 1 email/week |
-| Config | `watchlist.yaml` | Tickers, ranking criteria, tone, recipient |
+| Config | `app/profiles/` | Tickers, ranking criteria, tone, recipient |
 
 GitHub Actions will run the pipeline as a Python script (checkout → install → `python -m digest run-weekly`). FastAPI is for local/manual runs, not a production web service.
 
 Used when each phase needs it:
 
 - Phase 1–2: Python 3.12, httpx, feedparser
-- Phase 3: Supabase Postgres
+- Phase 3: Supabase Postgres + Alembic
 - Phase 4: OpenAI
 - Phase 5: Resend, FastAPI, GitHub Actions
-- Always: `watchlist.yaml` as the user profile (no user table)
+- Always: `app/profiles/` as the user profile (no user table)
 
 ## Watchlist config
 
@@ -65,7 +65,7 @@ CIK lookup at ingest time from SEC’s public `company_tickers.json` (cached), s
 
 ## Data model (Supabase)
 
-Four tables, matching the agent stages. No user table — the profile is the YAML file.
+Four tables, matching the agent stages. No user table — the profile lives in `app/profiles/`.
 
 - **`raw_items`** — ingested payload
   - `id`, `source` (`rss` | `sec`), `ticker`, `title`, `url`, `published_at`
@@ -169,10 +169,10 @@ Minimal throwaway-quality code is fine here. We can reshape it in Phase 2.
 #### Step 1.1 — Tiny Python runner
 
 - `requirements.txt`: `httpx`, `feedparser`, `python-dotenv`
-- `scripts/fetch_rss.py` and `scripts/fetch_sec.py` (or one `scripts/spike.py` with two subcommands)
+- `app/scrapers/rss.py` and `app/scrapers/sec.py`
 - Hardcode 2–3 tickers for the spike: `NVDA`, `AAPL`, `MSFT`
 - Window: last **7 days**
-- Output: pretty-print to the terminal **and** write `spike_output/rss.json` + `spike_output/sec.json`
+- Output: pretty-print to the terminal **and** write `data/rss.json` + `data/sec.json`
 - `.gitignore` those output files
 
 #### Step 1.2 — RSS scraper
@@ -201,8 +201,8 @@ SEC requires a descriptive `User-Agent` (name + email). Put it in `.env` as `SEC
 
 Phase 1 is done only when:
 
-- `python scripts/fetch_rss.py` prints real headlines with links
-- `python scripts/fetch_sec.py` prints real filings with accession numbers
+- `python -m app.scrapers.rss` prints real headlines with links
+- `python -m app.scrapers.sec` prints real filings with accession numbers
 - Both JSON dumps exist and look inspectable
 - This README notes **which URLs actually worked** (feeds change)
 
@@ -212,20 +212,20 @@ If either source is a dead end, pivot the source *before* building the rest of t
 
 Still no Supabase/OpenAI/Resend.
 
-1. Package layout: `app/ingest/rss.py`, `app/ingest/sec.py`, `app/config.py`
-2. `watchlist.yaml` with the real (or placeholder) ticker list — stop hardcoding
+1. Package layout: `app/scrapers/rss.py`, `app/scrapers/sec.py`
+2. Profile in `app/profiles/` with the real (or placeholder) ticker list — stop hardcoding
 3. Shared item shape: `source`, `ticker`, `title`, `url`, `published_at`, `raw_text`, `external_id`
 4. Dedupe in memory on `external_id` (URL or accession)
 5. CLI: `python -m digest ingest` writes `data/raw_items.json`
-6. Delete or fold `scripts/spike.py` once the module matches spike output
+6. Fold the Phase 1 fetchers into this ingest CLI once the module matches that output
 
 ### Phase 3 — Persist to Supabase
 
 Only after ingest is trusted.
 
 1. Supabase project + `raw_items` table (`external_id` unique)
-2. Migration in `supabase/migrations/001_init.sql` — start with **only** `raw_items`; add later tables in Phase 4/5
-3. `app/db.py` upsert from the ingest CLI
+2. Alembic migration in `alembic/versions/` — start with **only** `raw_items`; add later tables in Phase 4/5
+3. `app/database/` helpers upsert from the ingest CLI
 4. Re-run ingest twice; second run must not duplicate rows
 
 ### Phase 4 — Three agents
@@ -249,14 +249,26 @@ Setup, env vars, how to add tickers, how to run Phase 1 / ingest / full weekly l
 
 ## Repo layout (target)
 
-- `watchlist.yaml` — ticker list and ranking prompt
-- `app/config.py` — env + YAML load
-- `app/ingest/rss.py` / `app/ingest/sec.py`
-- `app/agents/summarize.py`, `app/agents/rank.py`, `app/agents/email.py`
-- `app/db.py` — supabase-py
-- `app/jobs/weekly.py` — orchestrator
+```
+app/
+  scrapers/     # RSS + SEC — collect fresh content
+  agent/        # LLM: summarize, rank, format the digest
+  database/     # Postgres helpers (read/write Supabase)
+  services/     # text cleanup + send email via Resend
+  profiles/     # user interests used to rank/personalize
+alembic/
+  versions/     # Alembic migrations (start with raw_items)
+data/           # local JSON dumps from Phase 1–2
+.github/workflows/  # weekly cron
+```
+
+- `app/scrapers/rss.py` / `app/scrapers/sec.py`
+- `app/agent/` — summarize, rank, write email
+- `app/database/` — connection + upsert helpers
+- `app/services/` — cleanup + Resend send + weekly orchestrator
+- `app/profiles/` — ticker list, ranking criteria, tone, recipient
+- `alembic/versions/` — schema migrations against Supabase Postgres
 - `app/main.py` — FastAPI: health + `POST /jobs/weekly`
-- `supabase/migrations/001_init.sql`
 - `.github/workflows/weekly-digest.yml` — cron (e.g. Sunday 12:00 UTC) + `workflow_dispatch`
 
 ## Secrets
@@ -276,7 +288,7 @@ GitHub Actions + local `.env`, never committed:
 - Name + email for the SEC `User-Agent`
 - Later: recipient email, Resend-verified from-address, preferred send day/time
 
-Until then, ship with a placeholder watchlist that can be edited in one file.
+Until then, ship with a placeholder profile in `app/profiles/` that can be edited in one file.
 
 ## Later (not V1)
 
