@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from html import unescape
 from re import sub
@@ -10,7 +11,7 @@ from re import sub
 import feedparser
 import httpx
 
-from app.config.settings import SpikeSettings
+from app.config.models import RawItem
 
 YAHOO_FEED = (
     "https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US"
@@ -19,24 +20,25 @@ USER_AGENT = "StockNewsDigest/0.1 (personal weekly digest)"
 
 
 class YahooNewsScraper:
-    def __init__(self, settings: SpikeSettings | None = None) -> None:
-        self.settings = settings or SpikeSettings()
+    def __init__(self, tickers: Sequence[str], window_start: datetime) -> None:
+        self.tickers = [ticker.upper() for ticker in tickers]
+        self.window_start = window_start
 
-    def fetch(self) -> list[dict]:
-        items: list[dict] = []
+    def fetch(self) -> list[RawItem]:
+        items: list[RawItem] = []
         headers = {"User-Agent": USER_AGENT}
         with httpx.Client(
             headers=headers, timeout=30.0, follow_redirects=True
         ) as client:
-            for ticker in self.settings.tickers:
+            for ticker in self.tickers:
                 items.extend(self._fetch_feed(client, ticker))
-        items.sort(key=lambda row: row.get("published") or "", reverse=True)
+        items.sort(key=lambda row: row["published_at"], reverse=True)
         return items
 
     def _yahoo_url(self, ticker: str) -> str:
         return YAHOO_FEED.format(ticker=ticker)
 
-    def _fetch_feed(self, client: httpx.Client, ticker: str) -> list[dict]:
+    def _fetch_feed(self, client: httpx.Client, ticker: str) -> list[RawItem]:
         url = self._yahoo_url(ticker)
         try:
             response = client.get(url)
@@ -46,19 +48,23 @@ class YahooNewsScraper:
             return []
 
         feed = feedparser.parse(response.content)
-        items = []
+        items: list[RawItem] = []
         for entry in feed.entries:
             published = self._published_at(entry)
-            if published is None or published < self.settings.window_start():
+            if published is None or published < self.window_start:
+                continue
+            link = str(entry.get("link") or "")
+            if not link:
                 continue
             items.append(
                 {
-                    "source": "yahoo",
+                    "source": "rss",
                     "ticker": ticker,
                     "title": self._clean_text(entry.get("title") or ""),
-                    "link": entry.get("link") or "",
-                    "published": published.isoformat(),
-                    "summary": self._clean_text(entry.get("summary") or "")[:500],
+                    "url": link,
+                    "published_at": published.isoformat(),
+                    "raw_text": self._clean_text(entry.get("summary") or "")[:500],
+                    "external_id": link,
                 }
             )
         time.sleep(0.4)

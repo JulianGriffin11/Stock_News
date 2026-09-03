@@ -1,23 +1,34 @@
-"""Shared settings and output helpers for the Phase 1 spike."""
+"""App settings: paths, 7-day window, and the Python profile."""
 
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from dotenv import load_dotenv
 
-class SpikeSettings:
+from app.config.profile import Profile, load_profile
+
+
+class Settings:
+    window_days = 7
+
     def __init__(self) -> None:
-        self.tickers = ["NVDA", "AAPL", "MSFT"]
-        self.ticker_names = {
-            "NVDA": "NVIDIA",
-            "AAPL": "Apple",
-            "MSFT": "Microsoft",
-        }
-        self.window_days = 7
         self.repo_root = Path(__file__).resolve().parents[2]
         self.data_dir = self.repo_root / "data"
+        load_dotenv(self.repo_root / ".env")
+        self.sec_user_agent = (os.getenv("SEC_USER_AGENT") or "").strip()
+        self.profile: Profile = load_profile()
+
+    @property
+    def tickers(self) -> list[str]:
+        return [ticker.symbol for ticker in self.profile.tickers]
+
+    @property
+    def ticker_names(self) -> dict[str, str]:
+        return {ticker.symbol: ticker.name for ticker in self.profile.tickers}
 
     def window_start(self) -> datetime:
         return datetime.now(UTC) - timedelta(days=self.window_days)
@@ -27,35 +38,3 @@ class SpikeSettings:
         path = self.data_dir / filename
         path.write_text(json.dumps(items, indent=2, default=str) + "\n")
         return path
-
-    def print_items(
-        self,
-        heading: str,
-        items: list[dict],
-        limit: int | None = 40,
-    ) -> None:
-        names = ", ".join(self.tickers)
-        print(f"{heading} — {names} — last {self.window_days} days")
-        print("-" * 60)
-        if not items:
-            print("(no items)")
-            return
-
-        shown = items if limit is None else items[:limit]
-        for item in shown:
-            source = item.get("form") or item.get("source") or "?"
-            ticker = item.get("ticker", "")
-            published = item.get("published") or item.get("filing_date") or ""
-            headline = item.get("title") or item.get("company") or ""
-            link = item.get("link") or item.get("url") or ""
-            accession = item.get("accession") or ""
-            print(f"[{source}] {ticker}  {published}  {headline}")
-            if accession:
-                print(f"          accession {accession}")
-            if link:
-                print(f"          {link}")
-            print()
-
-        leftover = len(items) - len(shown)
-        if leftover > 0:
-            print(f"... {leftover} more in the JSON dump")

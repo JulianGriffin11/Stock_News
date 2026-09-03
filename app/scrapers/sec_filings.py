@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import json
-import os
 import time
-from datetime import date
+from collections.abc import Sequence
+from datetime import UTC, date, datetime
+from pathlib import Path
 
 import httpx
-from dotenv import load_dotenv
 
-from app.config.settings import SpikeSettings
+from app.config.models import RawItem
 
 COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik10}.json"
@@ -18,39 +18,48 @@ KEEP_FORMS = {"8-K", "10-Q", "10-K", "4"}
 
 
 class SecFilingsScraper:
-    def __init__(self, settings: SpikeSettings | None = None) -> None:
-        self.settings = settings or SpikeSettings()
-        load_dotenv(self.settings.repo_root / ".env")
-        self.user_agent = (os.getenv("SEC_USER_AGENT") or "").strip()
+    def __init__(
+        self,
+        tickers: Sequence[str],
+        window_start: datetime,
+        user_agent: str,
+        cache_dir: Path,
+    ) -> None:
+        self.tickers = [ticker.upper() for ticker in tickers]
+        self.window_start = window_start
+        self.user_agent = user_agent.strip()
+        self.cache_dir = cache_dir
+        if not self.user_agent:
+            raise ValueError(
+                "SEC_USER_AGENT is missing. Set it in .env as: Your Name you@email.com"
+            )
 
-    def fetch(self) -> list[dict]:
-        window_start = self.settings.window_start().date()
+    def fetch(self) -> list[RawItem]:
+        cutoff = self.window_start.date()
         headers = {
             "User-Agent": self.user_agent,
             "Accept-Encoding": "gzip, deflate",
         }
-        items: list[dict] = []
+        items: list[RawItem] = []
         with httpx.Client(
             headers=headers, timeout=30.0, follow_redirects=True
         ) as client:
             ticker_map = self._ticker_map(client)
-            for ticker in self.settings.tickers:
-                items.extend(
-                    self._filings_for(client, ticker, ticker_map, window_start)
-                )
+            for ticker in self.tickers:
+                items.extend(self._filings_for(client, ticker, ticker_map, cutoff))
                 time.sleep(0.2)
-        items.sort(key=lambda row: row.get("filing_date") or "", reverse=True)
+        items.sort(key=lambda row: row["published_at"], reverse=True)
         return items
 
     def _ticker_map(self, client: httpx.Client) -> dict[str, dict]:
-        cache_path = self.settings.data_dir / "company_tickers.json"
+        cache_path = self.cache_dir / "company_tickers.json"
         if cache_path.exists():
             raw = json.loads(cache_path.read_text())
         else:
             response = client.get(COMPANY_TICKERS_URL)
             response.raise_for_status()
             raw = response.json()
-            self.settings.data_dir.mkdir(parents=True, exist_ok=True)
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
             cache_path.write_text(json.dumps(raw))
             time.sleep(0.2)
 
@@ -67,8 +76,8 @@ class SecFilingsScraper:
         client: httpx.Client,
         ticker: str,
         ticker_map: dict[str, dict],
-        window_start: date,
-    ) -> list[dict]:
+        cutoff: date,
+    ) -> list[RawItem]:
         info = ticker_map.get(ticker)
         if not info:
             print(f"{ticker}: no CIK found")
@@ -81,7 +90,7 @@ class SecFilingsScraper:
         recent = payload.get("filings", {}).get("recent", {})
         company = payload.get("name") or info["title"]
 
-        items: list[dict] = []
+        items: list[RawItem] = []
         rows = zip(
             recent.get("form", []),
             recent.get("filingDate", []),
@@ -96,21 +105,24 @@ class SecFilingsScraper:
                 parsed = date.fromisoformat(filing_date)
             except ValueError:
                 continue
-            if parsed < window_start:
+            if parsed < cutoff:
                 continue
+            published_at = datetime(parsed.year, parsed.month, parsed.day, tzinfo=UTC)
             items.append(
                 {
                     "source": "sec",
                     "ticker": ticker,
-                    "company": company,
-                    "form": form,
-                    "filing_date": filing_date,
-                    "accession": accession,
+                    "title": f"{ticker} {form} — {company}",
                     "url": self._document_url(info["cik"], accession, primary),
+                    "published_at": published_at.isoformat(),
+                    "raw_text": f"{company} filed Form {form} on {filing_date}.",
+                    "external_id": accession,
                 }
             )
         return items
 
     def _document_url(self, cik: int, accession: str, primary: str) -> str:
         accession_id = accession.replace("-", "")
-        return f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession_id}/{primary}"
+        return (
+            f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession_id}/{primary}"
+        )

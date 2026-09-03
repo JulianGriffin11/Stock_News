@@ -30,7 +30,7 @@ RSS alone usually fills an email. SEC is what makes it *investor* rather than *n
 | DB | Supabase Postgres | One project, tables + optional dashboard |
 | LLM | OpenAI | `gpt-4o-mini` for per-item summaries; a stronger model for rank + email |
 | Email | [Resend](https://resend.com) | Simple API, good HTML, free tier is plenty for 1 email/week |
-| Config | `app/profiles/` | Tickers, ranking criteria, tone, recipient |
+| Config | `app/profiles/` | `user.py` persona + `tickers.py` watchlist |
 
 GitHub Actions will run the pipeline as a Python script (checkout → install → `python -m digest run-weekly`). FastAPI is for local/manual runs, not a production web service.
 
@@ -44,21 +44,14 @@ Used when each phase needs it:
 
 ## Watchlist config
 
-Placeholder names until the real list is filled in:
+Persona is `app/profiles/user.py`. Watchlist is `app/profiles/tickers.py` — append a dict to add a name:
 
-```yaml
-recipient: you@email.com
-timezone: America/New_York
-send_day: sunday
-tickers:
-  - symbol: NVDA
-    name: NVIDIA
-  - symbol: AAPL
-    name: Apple
-ranking_criteria: |
-  Prefer material filings, earnings, guidance, M&A, regulation,
-  and product/competitive shifts. Deprioritize recaps and rumor.
-email_tone: concise, slightly polished, no hype
+```python
+TICKERS = [
+    {"symbol": "NVDA", "name": "NVIDIA"},
+    {"symbol": "AAPL", "name": "Apple"},
+    {"symbol": "MSFT", "name": "Microsoft"},
+]
 ```
 
 CIK lookup at ingest time from SEC’s public `company_tickers.json` (cached), so CIKs do not have to be hand-entered.
@@ -229,6 +222,14 @@ Still no Supabase/OpenAI/Resend.
 5. CLI: `python -m digest ingest` writes `data/raw_items.json`
 6. Fold the Phase 1 fetchers into this ingest CLI once the module matches that output
 
+**Verified 2026-09-03** — ingest reads `app/profiles/tickers.py` + `app/profiles/user.py`, fetches both sources, dedupes, and writes `data/raw_items.json`.
+
+```bash
+uv run python -m digest ingest
+```
+
+Tickers are no longer hardcoded. Scrapers take a ticker list + cutoff; they do not load the profile files. Playground scripts still exercise one scraper at a time.
+
 ### Phase 3 — Persist to Supabase
 
 Only after ingest is trusted.
@@ -243,7 +244,7 @@ Only after ingest is trusted.
 Tables: `item_summaries`, `digest_runs`.
 
 1. **Summarize** — loop new `raw_items` → short JSON (summary, why it matters, type). `gpt-4o-mini`
-2. **Rank** — one call over this week’s summaries + `ranking_criteria` in YAML → top 5–10 ids + reasons. Stronger model. If fewer than 5 items, keep what we have
+2. **Rank** — one call over this week’s summaries + `ranking_criteria` in `user.py` → top 5–10 ids + reasons. Stronger model. If fewer than 5 items, keep what we have
 3. **Write email** — ranked items + `email_tone` → subject + HTML + plaintext. Store on `emails` (unsent)
 
 ### Phase 5 — Send and schedule
@@ -261,24 +262,29 @@ Setup, env vars, how to add tickers, how to run Phase 1 / ingest / full weekly l
 
 ```
 app/
-  config/       # spike watchlist, window, output helpers
+  config/       # load Python profile, window, output helpers
   scrapers/     # RSS + SEC — collect fresh content
+  ingest.py     # fetch, shared item shape, in-memory dedupe
   agent/        # LLM: summarize, rank, format the digest
   database/     # Postgres helpers (read/write Supabase)
   services/     # text cleanup + send email via Resend
   profiles/     # user interests used to rank/personalize
+digest/         # CLI: python -m digest ingest
 alembic/
   versions/     # Alembic migrations (start with raw_items)
 data/           # local JSON dumps from Phase 1–2
 .github/workflows/  # weekly cron
 ```
 
-- `app/config/settings.py` — watchlist, 7-day window, JSON/print helpers
+- `app/config/settings.py` — load Python profile, 7-day window, JSON dump
 - `app/scrapers/yahoo_news.py` / `app/scrapers/sec_filings.py`
+- `app/ingest.py` — fetch both sources, shared item shape, in-memory dedupe
+- `digest/` — CLI (`python -m digest ingest`)
 - `app/agent/` — summarize, rank, write email
 - `app/database/` — connection + upsert helpers
 - `app/services/` — cleanup + Resend send + weekly orchestrator
-- `app/profiles/` — ticker list, ranking criteria, tone, recipient
+- `app/profiles/user.py` — persona, preferences, ranking criteria, recipient
+- `app/profiles/tickers.py` — watchlist (append to extend)
 - `alembic/versions/` — schema migrations against Supabase Postgres
 - `app/main.py` — FastAPI: health + `POST /jobs/weekly`
 - `.github/workflows/weekly-digest.yml` — cron (e.g. Sunday 12:00 UTC) + `workflow_dispatch`
@@ -299,7 +305,7 @@ GitHub Actions + local `.env`, never committed:
 - Real ticker list (spike uses NVDA / AAPL / MSFT)
 - Later: recipient email, Resend-verified from-address, preferred send day/time
 
-Until then, ship with a placeholder profile in `app/profiles/` that can be edited in one file.
+Until then, edit `app/profiles/user.py` and append names in `app/profiles/tickers.py`.
 
 ## Later (not V1)
 
