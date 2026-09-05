@@ -11,7 +11,7 @@ Run this file to exercise the news scraper alone:
 
 from app.config.settings import Settings
 from app.ingest import print_items
-from app.scrapers.yahoo_news import YahooNewsScraper
+from app.scrapers.yahoo_scraper import YahooNewsScraper
 
 
 def run() -> None:

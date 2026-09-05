@@ -13,7 +13,7 @@ Run this file to exercise the filings scraper alone:
 
 from app.config.settings import Settings
 from app.ingest import print_items
-from app.scrapers.sec_filings import SecFilingsScraper
+from app.scrapers.sec_scraper import SecFilingsScraper
 
 
 def run() -> None:

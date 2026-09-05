@@ -162,7 +162,7 @@ Minimal throwaway-quality code is fine here. We can reshape it in Phase 2.
 #### Step 1.1 — Tiny Python runner
 
 - `requirements.txt`: `httpx`, `feedparser`, `python-dotenv`
-- `app/scrapers/yahoo_news.py` and `app/scrapers/sec_filings.py`
+- `app/scrapers/yahoo_scraper.py` and `app/scrapers/sec_scraper.py`
 - Hardcode 2–3 tickers for the spike: `NVDA`, `AAPL`, `MSFT`
 - Window: last **7 days**
 - Output: pretty-print to the terminal **and** write `data/yahoo_news.json` + `data/sec_filings.json`
@@ -215,7 +215,7 @@ Did not need Feedspot/RSS.app or CNBC/Reuters fallbacks.
 
 Still no Supabase/OpenAI/Resend.
 
-1. Package layout: `app/scrapers/yahoo_news.py`, `app/scrapers/sec_filings.py`
+1. Package layout: `app/scrapers/yahoo_scraper.py`, `app/scrapers/sec_scraper.py`
 2. Profile in `app/profiles/` with the real (or placeholder) ticker list — stop hardcoding
 3. Shared item shape: `source`, `ticker`, `title`, `url`, `published_at`, `raw_text`, `external_id`
 4. Dedupe in memory on `external_id` (URL or accession)
@@ -277,7 +277,7 @@ data/           # local JSON dumps from Phase 1–2
 ```
 
 - `app/config/settings.py` — load Python profile, 7-day window, JSON dump
-- `app/scrapers/yahoo_news.py` / `app/scrapers/sec_filings.py`
+- `app/scrapers/yahoo_scraper.py` / `app/scrapers/sec_scraper.py` / `app/scrapers/sec_toolbox.py`
 - `app/ingest.py` — fetch both sources, shared item shape, in-memory dedupe
 - `digest/` — CLI (`python -m digest ingest`)
 - `app/agent/` — summarize, rank, write email

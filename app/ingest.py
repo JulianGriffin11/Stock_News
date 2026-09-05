@@ -6,8 +6,8 @@ from collections import Counter
 
 from app.config.settings import Settings
 from app.config.models import RawItem
-from app.scrapers.sec_filings import SecFilingsScraper
-from app.scrapers.yahoo_news import YahooNewsScraper
+from app.scrapers.sec_scraper import SecFilingsScraper
+from app.scrapers.yahoo_scraper import YahooNewsScraper
 
 
 def dedupe(items: list[RawItem]) -> list[RawItem]:
