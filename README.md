@@ -232,12 +232,34 @@ Tickers are no longer hardcoded. Scrapers take a ticker list + cutoff; they do n
 
 ### Phase 3 — Persist to Supabase
 
-Only after ingest is trusted.
+Only after ingest is trusted. Schema starts with **`raw_items` only** (`external_id` unique). Later tables wait for Phase 4/5.
 
-1. Supabase project + `raw_items` table (`external_id` unique)
-2. Alembic migration in `alembic/versions/` — start with **only** `raw_items`; add later tables in Phase 4/5
-3. `app/database/` helpers upsert from the ingest CLI
-4. Re-run ingest twice; second run must not duplicate rows
+1. Create a Supabase project. In **Project Settings → Database**, copy the Postgres URI into `.env` as `DATABASE_URL`. Prefer the **direct** connection (port `5432`), not the transaction pooler (`6543`) — Alembic needs a real session. URL-encode any special characters in the password.
+2. Apply the migration, then ingest twice. The second run must not create duplicate rows.
+
+```bash
+# confirm the URL is loaded (prints nothing if set)
+uv run python -c "from app.config.settings import Settings; Settings().require_database_url(); print('DATABASE_URL ok')"
+
+# create raw_items
+uv run alembic upgrade head
+
+# optional: confirm revision
+uv run alembic current
+
+# fetch + upsert
+uv run python -m digest ingest
+
+# same items again — should print N inserted, 0 updated the first time,
+# then 0 inserted, N updated the second time (no new rows)
+uv run python -m digest ingest
+```
+
+Check the table in Supabase **Table Editor → raw_items**, or:
+
+```bash
+uv run python playground/test_raw_items_db.py
+```
 
 ### Phase 4 — Three agents
 
@@ -297,6 +319,7 @@ GitHub Actions + local `.env`, never committed:
 - `RESEND_API_KEY`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `DATABASE_URL` — direct Postgres URI (port 5432) for Alembic + ingest upserts
 - `RESEND_FROM`
 - `SEC_USER_AGENT` — descriptive name + email; EDGAR will 403 without it
 

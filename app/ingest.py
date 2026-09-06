@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from collections import Counter
 
-from app.config.settings import Settings
 from app.config.models import RawItem
+from app.config.settings import Settings
+from app.database.raw_items import upsert_raw_items
 from app.scrapers.sec_scraper import SecFilingsScraper
 from app.scrapers.yahoo_scraper import YahooNewsScraper
 
@@ -78,4 +79,7 @@ def run_ingest(settings: Settings | None = None) -> list[RawItem]:
         parts.append(f"{dropped} duplicates dropped")
     suffix = f" ({'; '.join(parts)})" if parts else ""
     print(f"Wrote {len(items)} items to {path}{suffix}")
+
+    inserted, updated = upsert_raw_items(items, settings)
+    print(f"Postgres: {inserted} inserted, {updated} updated (dedupe on external_id)")
     return items

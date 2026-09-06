@@ -18,6 +18,7 @@ def run() -> None:
     print("window start:", settings.window_start().isoformat())
     print("data dir:", settings.data_dir)
     print("recipient:", settings.profile.recipient)
+    print("database_url set:", bool(settings.database_url))
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ class Settings:
         self.data_dir = self.repo_root / "data"
         load_dotenv(self.repo_root / ".env")
         self.sec_user_agent = (os.getenv("SEC_USER_AGENT") or "").strip()
+        self.database_url = (os.getenv("DATABASE_URL") or "").strip()
         self.profile: Profile = load_profile()
 
     @property
@@ -29,6 +30,19 @@ class Settings:
     @property
     def ticker_names(self) -> dict[str, str]:
         return {ticker.symbol: ticker.name for ticker in self.profile.tickers}
+
+    def require_database_url(self) -> str:
+        if not self.database_url:
+            raise ValueError(
+                "DATABASE_URL is missing. Copy it from Supabase → Project "
+                "Settings → Database → URI and put it in .env"
+            )
+        url = self.database_url
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://") :]
+        if "sslmode=" not in url:
+            url += "&sslmode=require" if "?" in url else "?sslmode=require"
+        return url
 
     def window_start(self) -> datetime:
         return datetime.now(UTC) - timedelta(days=self.window_days)

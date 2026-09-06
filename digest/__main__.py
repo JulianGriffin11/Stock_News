@@ -13,7 +13,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser(
         "ingest",
-        help="Fetch Yahoo RSS + SEC filings into data/raw_items.json",
+        help="Fetch Yahoo RSS + SEC filings, write JSON, upsert to Postgres",
     )
     args = parser.parse_args(argv)
 
