@@ -40,6 +40,7 @@ Used when each phase needs it:
 - Phase 3: Supabase Postgres + Alembic
 - Phase 4: OpenAI
 - Phase 5: Resend, FastAPI, GitHub Actions
+- Phase 6: Refactor (after the pipeline works end-to-end)
 - Always: `app/profiles/` as the user profile (no user table)
 
 ## Watchlist config
@@ -263,11 +264,25 @@ uv run python playground/test_raw_items_db.py
 
 ### Phase 4 — Three agents
 
-Tables: `item_summaries`, `digest_runs`.
+Tables: `item_summaries`, `digest_runs`, and `emails` (stored unsent; Resend waits for Phase 5).
 
 1. **Summarize** — loop new `raw_items` → short JSON (summary, why it matters, type). `gpt-4o-mini`
-2. **Rank** — one call over this week’s summaries + `ranking_criteria` in `user.py` → top 5–10 ids + reasons. Stronger model. If fewer than 5 items, keep what we have
-3. **Write email** — ranked items + `email_tone` → subject + HTML + plaintext. Store on `emails` (unsent)
+2. **Rank** — one call over this week’s summaries + `ranking_criteria` in `user.py` → top 5–10 ids + reasons. `gpt-4o`. If fewer than 5 items, keep what we have
+3. **Write email** — ranked items + `email_tone` → subject + HTML + plaintext. Store on `emails` (unsent). Idempotent per `week_start` (Monday UTC); `--force` replaces
+
+```bash
+# create item_summaries + digest_runs + emails
+uv run alembic upgrade head
+uv run alembic current
+
+# confirm the new tables exist
+uv run python playground/test_agents_db.py
+
+# agents (needs OPENAI_API_KEY). Re-run summarize anytime; rank / write-email skip if this week exists
+uv run python -m digest summarize
+uv run python -m digest rank
+uv run python -m digest write-email
+```
 
 ### Phase 5 — Send and schedule
 
@@ -276,7 +291,17 @@ Tables: `item_summaries`, `digest_runs`.
 3. Thin FastAPI: health + `POST /jobs/weekly` for local/manual runs — **not** a hosted server
 4. GitHub Actions: Sunday cron + `workflow_dispatch`
 
-### Phase 6 — Docs
+### Phase 6 — Refactor (after Phase 5 works)
+
+Cleanup once `run-weekly` is live. Not blocking V1 — each step still works standalone via CLI and Postgres today.
+
+1. **`PipelineContext`** — small dataclass (`settings`, `week_start`, optional `digest_run`) created once in `run-weekly` and passed step to step. Cuts repeated `Settings()` / `week_start()` boilerplate when the orchestrator chains ingest → summarize → rank → write → send in one process. Separate CLI commands can keep loading from DB as they do now.
+2. **Shared `pack_summary()`** — one helper (e.g. `app/agent/prompts.py`) that turns an `ItemSummaryRow` into the LLM dict. `steps/rank.py` and `steps/write_email.py` duplicate this today.
+3. **Rank tuning** — as the watchlist grows (10–20 tickers), bump ranked cap to 8–12 and add diversity rules (max picks per ticker; don’t let one earnings week dominate). “Worth a look” filings section already covers the second tier.
+4. **Model roles** — keep cheap model for summarize volume; strongest model on rank; email can stay cheap (1 call/week).
+5. **Logging** — replace ad-hoc `print()` across ingest and agent steps with `logging` (`info` / `warning` / `error`). Log step start/end, counts, and failures with context (`week_start`, command). Phase 5 can wire `basicConfig` in `run-weekly` for GitHub Actions; this phase is the full cleanup.
+
+### Phase 7 — Docs
 
 Setup, env vars, how to add tickers, how to run Phase 1 / ingest / full weekly locally.
 
@@ -287,7 +312,7 @@ app/
   config/       # load Python profile, window, output helpers
   scrapers/     # RSS + SEC — collect fresh content
   ingest.py     # fetch, shared item shape, in-memory dedupe
-  agent/        # LLM: summarize, rank, format the digest
+  agent/        # LLM client + schemas; steps/ has summarize, rank, write email
   database/     # Postgres helpers (read/write Supabase)
   services/     # text cleanup + send email via Resend
   profiles/     # user interests used to rank/personalize
@@ -302,7 +327,7 @@ data/           # local JSON dumps from Phase 1–2
 - `app/scrapers/yahoo_scraper.py` / `app/scrapers/sec_scraper.py` / `app/scrapers/sec_toolbox.py`
 - `app/ingest.py` — fetch both sources, shared item shape, in-memory dedupe
 - `digest/` — CLI (`python -m digest ingest`)
-- `app/agent/` — summarize, rank, write email
+- `app/agent/` — `client.py`, `schemas.py`; `steps/` — summarize, rank, write email
 - `app/database/` — connection + upsert helpers
 - `app/services/` — cleanup + Resend send + weekly orchestrator
 - `app/profiles/user.py` — persona, preferences, ranking criteria, recipient

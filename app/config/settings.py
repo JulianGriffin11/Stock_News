@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -21,6 +21,10 @@ class Settings:
         load_dotenv(self.repo_root / ".env")
         self.sec_user_agent = (os.getenv("SEC_USER_AGENT") or "").strip()
         self.database_url = (os.getenv("DATABASE_URL") or "").strip()
+        self.openai_api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        self.summarize_model = "gpt-4o-mini"
+        self.rank_model = "gpt-5.6-sol"
+        self.email_model = "gpt-4o-mini"
         self.profile: Profile = load_profile()
 
     @property
@@ -44,8 +48,18 @@ class Settings:
             url += "&sslmode=require" if "?" in url else "?sslmode=require"
         return url
 
+    def require_openai_api_key(self) -> str:
+        if not self.openai_api_key:
+            raise ValueError("OPENAI_API_KEY is missing. Put it in .env")
+        return self.openai_api_key
+
     def window_start(self) -> datetime:
         return datetime.now(UTC) - timedelta(days=self.window_days)
+
+    def week_start(self) -> date:
+        """Monday of the current UTC week — stable digest_runs key."""
+        today = datetime.now(UTC).date()
+        return today - timedelta(days=today.weekday())
 
     def write_json(self, filename: str, items: list[dict]) -> Path:
         self.data_dir.mkdir(parents=True, exist_ok=True)

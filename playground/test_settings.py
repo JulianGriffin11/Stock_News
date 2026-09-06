@@ -19,6 +19,8 @@ def run() -> None:
     print("data dir:", settings.data_dir)
     print("recipient:", settings.profile.recipient)
     print("database_url set:", bool(settings.database_url))
+    print("openai_api_key set:", bool(settings.openai_api_key))
+    print("week_start:", settings.week_start().isoformat())
 
 
 if __name__ == "__main__":
