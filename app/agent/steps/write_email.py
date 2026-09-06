@@ -82,30 +82,37 @@ def _leftover_filings(
     return leftover[:8]
 
 
-def run_write_email(settings: Settings | None = None, force: bool = False) -> int:
+def run_write_email(
+    settings: Settings | None = None,
+    force: bool = False,
+    *,
+    quiet: bool = False,
+) -> int:
     settings = settings or Settings()
     week = settings.week_start()
     run = get_run_for_week(week, settings)
     if run is None:
-        print(f"Write email: no digest_run for week_start={week}. Run rank first.")
+        if not quiet:
+            print(f"Write email: no digest_run for week_start={week}. Run rank first.")
         return 0
 
     existing = get_email_for_run(run.id, settings)
     if existing is not None and not force:
-        print(
-            f"Write email: unsent email already stored for week_start={week}. "
-            "Pass --force to replace."
-        )
+        if not quiet:
+            print(
+                f"Write email: already stored for week_start={week}. "
+                "Pass --force to replace."
+            )
         return 0
 
     ranked_ids = [uuid.UUID(str(item_id)) for item_id in run.ranked_item_ids]
     ranked = get_summaries_by_ids(ranked_ids, settings)
     if not ranked:
-        print("Write email: ranked_item_ids did not match any summaries.")
+        if not quiet:
+            print("Write email: ranked_item_ids did not match any summaries.")
         return 0
 
     leftover = _leftover_filings(ranked, list_week_summaries(settings))
-    print(f"Write email: {len(ranked)} ranked, {len(leftover)} leftover filings")
     out = parse_response(
         model=settings.email_model,
         instructions=INSTRUCTIONS,
@@ -113,7 +120,7 @@ def run_write_email(settings: Settings | None = None, force: bool = False) -> in
         schema=EmailOut,
         settings=settings,
     )
-    email_id = upsert_unsent_email(
+    upsert_unsent_email(
         digest_run_id=run.id,
         subject=out.subject,
         html_body=out.html_body,
@@ -121,6 +128,6 @@ def run_write_email(settings: Settings | None = None, force: bool = False) -> in
         settings=settings,
     )
     set_run_status(run.id, "written", settings)
-    print(f"emails {email_id} status=unsent")
-    print(f"Subject: {out.subject}")
+    if not quiet:
+        print(f"Write email: stored unsent — {out.subject}")
     return 1

@@ -1,0 +1,38 @@
+name: Weekly digest
+
+on:
+  schedule:
+    - cron: "0 12 * * 0"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Replace this week's digest and send again
+        type: boolean
+        default: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - run: uv sync --frozen
+      - run: uv run alembic upgrade head
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Run weekly digest
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force }}" = "true" ]; then
+            uv run python -m digest run-weekly --force
+          else
+            uv run python -m digest run-weekly
+          fi

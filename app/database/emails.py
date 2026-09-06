@@ -1,8 +1,9 @@
-"""Read and write emails (unsent until Phase 5)."""
+"""Read and write emails (unsent until send)."""
 
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -56,3 +57,28 @@ def upsert_unsent_email(
     ).returning(EmailRow.id)
     with session_scope(settings) as session:
         return session.scalar(stmt)
+
+
+def mark_email_sent(
+    email_id: uuid.UUID,
+    resend_id: str,
+    settings: Settings | None = None,
+) -> None:
+    with session_scope(settings) as session:
+        row = session.get(EmailRow, email_id)
+        if row is None:
+            raise ValueError(f"email {email_id} not found")
+        row.status = "sent"
+        row.resend_id = resend_id
+        row.sent_at = datetime.now(UTC)
+
+
+def mark_email_failed(
+    email_id: uuid.UUID,
+    settings: Settings | None = None,
+) -> None:
+    with session_scope(settings) as session:
+        row = session.get(EmailRow, email_id)
+        if row is None:
+            raise ValueError(f"email {email_id} not found")
+        row.status = "failed"

@@ -54,7 +54,11 @@ def print_items(
         print(f"... {leftover} more in the JSON dump")
 
 
-def run_ingest(settings: Settings | None = None) -> list[RawItem]:
+def run_ingest(
+    settings: Settings | None = None,
+    *,
+    quiet: bool = False,
+) -> list[RawItem]:
     settings = settings or Settings()
     cutoff = settings.window_start()
 
@@ -70,16 +74,11 @@ def run_ingest(settings: Settings | None = None) -> list[RawItem]:
     items = dedupe(merged)
     items.sort(key=lambda row: row["published_at"], reverse=True)
 
-    print_items("Ingest", items, settings.tickers, settings.window_days)
-    path = settings.write_json("raw_items.json", items)
-    dropped = len(merged) - len(items)
-    counts = Counter(item["source"] for item in items)
-    parts = [f"{count} {source}" for source, count in sorted(counts.items())]
-    if dropped:
-        parts.append(f"{dropped} duplicates dropped")
-    suffix = f" ({'; '.join(parts)})" if parts else ""
-    print(f"Wrote {len(items)} items to {path}{suffix}")
-
+    settings.write_json("raw_items.json", items)
     inserted, updated = upsert_raw_items(items, settings)
-    print(f"Postgres: {inserted} inserted, {updated} updated (dedupe on external_id)")
+    if not quiet:
+        counts = Counter(item["source"] for item in items)
+        parts = [f"{count} {source}" for source, count in sorted(counts.items())]
+        print(f"Ingest: {len(items)} items ({'; '.join(parts) or 'none'})")
+        print(f"Postgres: {inserted} inserted, {updated} updated")
     return items

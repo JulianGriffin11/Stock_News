@@ -36,14 +36,14 @@ def _user_input(item: RawItemRow, settings: Settings) -> str:
     )
 
 
-def run_summarize(settings: Settings | None = None) -> int:
+def run_summarize(settings: Settings | None = None, *, quiet: bool = False) -> int:
     settings = settings or Settings()
     items = list_unsummarized(settings)
     if not items:
-        print("Summarize: nothing new (all in-window items already have summaries)")
+        if not quiet:
+            print("Summarize: nothing new")
         return 0
 
-    print(f"Summarize: {len(items)} unsummarized items")
     written = 0
     for item in items:
         out = parse_response(
@@ -63,6 +63,6 @@ def run_summarize(settings: Settings | None = None) -> int:
             settings=settings,
         )
         written += 1
-        print(f"  [{out.item_type}] {item.ticker}  {item.title[:80]}")
-    print(f"Wrote {written} item_summaries")
+    if not quiet:
+        print(f"Summarize: wrote {written} item_summaries")
     return written

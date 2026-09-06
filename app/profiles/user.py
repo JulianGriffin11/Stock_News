@@ -35,7 +35,7 @@ USER_PROFILE = {
         "avoid_hype": True,
     },
     "expertise_level": "Intermediate",
-    "recipient": "juliangriffin@gmail.com",
+    "recipient": "juliangriffinj@gmail.com",
     "timezone": "America/New_York",
     "send_day": "sunday",
     "ranking_criteria": (

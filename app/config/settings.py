@@ -22,6 +22,8 @@ class Settings:
         self.sec_user_agent = (os.getenv("SEC_USER_AGENT") or "").strip()
         self.database_url = (os.getenv("DATABASE_URL") or "").strip()
         self.openai_api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        self.resend_api_key = (os.getenv("RESEND_API_KEY") or "").strip()
+        self.resend_from = (os.getenv("RESEND_FROM") or "").strip()
         self.summarize_model = "gpt-4o-mini"
         self.rank_model = "gpt-5.6-sol"
         self.email_model = "gpt-4o-mini"
@@ -52,6 +54,25 @@ class Settings:
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY is missing. Put it in .env")
         return self.openai_api_key
+
+    def require_resend_api_key(self) -> str:
+        if not self.resend_api_key:
+            raise ValueError("RESEND_API_KEY is missing. Put it in .env")
+        return self.resend_api_key
+
+    def require_resend_from(self) -> str:
+        if not self.resend_from:
+            raise ValueError(
+                "RESEND_FROM is missing. Use a Resend-verified address, e.g. "
+                "Digest <news@yourdomain.com>"
+            )
+        return self.resend_from
+
+    def require_recipient(self) -> str:
+        recipient = (self.profile.recipient or "").strip()
+        if not recipient:
+            raise ValueError("recipient is missing in app/profiles/user.py")
+        return recipient
 
     def window_start(self) -> datetime:
         return datetime.now(UTC) - timedelta(days=self.window_days)

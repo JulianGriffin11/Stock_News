@@ -66,23 +66,29 @@ def _valid_picks(out: RankOut, allowed: set[str]) -> list[tuple[str, str]]:
     return picks[:10]
 
 
-def run_rank(settings: Settings | None = None, force: bool = False) -> int:
+def run_rank(
+    settings: Settings | None = None,
+    force: bool = False,
+    *,
+    quiet: bool = False,
+) -> int:
     settings = settings or Settings()
     week = settings.week_start()
     existing = get_run_for_week(week, settings)
     if existing is not None and not force:
-        print(
-            f"Rank: digest already exists for week_start={week} "
-            f"({len(existing.ranked_item_ids)} items). Pass --force to replace."
-        )
+        if not quiet:
+            print(
+                f"Rank: digest already exists for week_start={week}. "
+                "Pass --force to replace."
+            )
         return 0
 
     summaries = list_week_summaries(settings)
     if not summaries:
-        print("Rank: no summaries in the 7-day window. Run summarize first.")
+        if not quiet:
+            print("Rank: no summaries in the 7-day window. Run summarize first.")
         return 0
 
-    print(f"Rank: {len(summaries)} summaries for week_start={week}")
     out = parse_response(
         model=settings.rank_model,
         instructions=INSTRUCTIONS,
@@ -95,7 +101,7 @@ def run_rank(settings: Settings | None = None, force: bool = False) -> int:
     if not picks:
         raise RuntimeError("rank model returned no valid summary_id values")
 
-    run_id = upsert_run(
+    upsert_run(
         week_start=week,
         ranked_item_ids=[item_id for item_id, _reason in picks],
         rank_rationale=out.rationale
@@ -104,9 +110,6 @@ def run_rank(settings: Settings | None = None, force: bool = False) -> int:
         status="ranked",
         settings=settings,
     )
-    print(f"digest_run {run_id}: {len(picks)} ranked items")
-    by_id = {str(row.id): row for row in summaries}
-    for item_id, reason in picks:
-        row = by_id[item_id]
-        print(f"  {row.raw_item.ticker} [{row.item_type}]  {reason}")
+    if not quiet:
+        print(f"Rank: {len(picks)} items for week_start={week}")
     return len(picks)

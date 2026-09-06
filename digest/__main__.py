@@ -1,4 +1,4 @@
-"""CLI: python -m digest ingest | summarize | rank | write-email | run-weekly"""
+"""CLI: python -m digest ingest | summarize | rank | write-email | send | run-weekly"""
 
 from __future__ import annotations
 
@@ -7,18 +7,8 @@ import argparse
 from app.agent.steps import run_rank, run_summarize, run_write_email
 from app.config.settings import Settings
 from app.ingest import run_ingest
-
-
-def run_pipeline(settings: Settings, force: bool = False) -> None:
-    print("=== ingest ===")
-    run_ingest(settings)
-    print("=== summarize ===")
-    run_summarize(settings)
-    print("=== rank ===")
-    run_rank(settings, force=force)
-    print("=== write-email ===")
-    run_write_email(settings, force=force)
-    print("=== done (email stored unsent; send is Phase 5) ===")
+from app.services.send_email import run_send
+from app.services.weekly import run_weekly
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -50,14 +40,23 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Replace an existing unsent email for this week",
     )
+    send_parser = sub.add_parser(
+        "send",
+        help="Send this week's stored email via Resend",
+    )
+    send_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Send again even if this week already went out",
+    )
     run_parser = sub.add_parser(
         "run-weekly",
-        help="Ingest → summarize → rank → write-email (does not send)",
+        help="Ingest → summarize → rank → write-email → send",
     )
     run_parser.add_argument(
         "--force",
         action="store_true",
-        help="Replace this week's digest_run and unsent email",
+        help="Replace this week's digest and send again",
     )
     args = parser.parse_args(argv)
     settings = Settings()
@@ -74,8 +73,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "write-email":
         run_write_email(settings, force=args.force)
         return 0
+    if args.command == "send":
+        run_send(settings, force=args.force)
+        return 0
     if args.command == "run-weekly":
-        run_pipeline(settings, force=args.force)
+        run_weekly(settings, force=args.force)
         return 0
     return 1
 

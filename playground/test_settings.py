@@ -20,6 +20,8 @@ def run() -> None:
     print("recipient:", settings.profile.recipient)
     print("database_url set:", bool(settings.database_url))
     print("openai_api_key set:", bool(settings.openai_api_key))
+    print("resend_api_key set:", bool(settings.resend_api_key))
+    print("resend_from set:", bool(settings.resend_from))
     print("week_start:", settings.week_start().isoformat())
 
 

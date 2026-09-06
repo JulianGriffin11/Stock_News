@@ -2,7 +2,7 @@
 
 A personal, once-a-week email of the most useful news and filings for a small named watchlist. You are the only user. Config lives in `app/profiles/`, not a signup product.
 
-**Build order is inverted on purpose:** prove the two data surfaces first. Do not stand up FastAPI, Supabase, OpenAI, or Resend until ingest is visibly working.
+**Build order is inverted on purpose:** prove the two data surfaces first. Do not stand up Supabase, OpenAI, or Resend until ingest is visibly working.
 
 ## V1 cut
 
@@ -16,7 +16,7 @@ A personal, once-a-week email of the most useful news and filings for a small na
 **Skip for V1**
 
 - Company IR scraping (fragile, per-site, anti-bot). Revisit later if a specific company has a clean IR RSS/Atom feed — many do, and that is a cheap add.
-- Price/quote APIs, multi-user auth, hosted always-on FastAPI.
+- Price/quote APIs, multi-user auth, hosted always-on web API.
 
 RSS alone usually fills an email. SEC is what makes it *investor* rather than *news*. Both stay in V1; IR waits.
 
@@ -24,22 +24,22 @@ RSS alone usually fills an email. SEC is what makes it *investor* rather than *n
 
 | Piece | Choice | Why |
 |---|---|---|
-| Language | Python 3.12 | Fits FastAPI + scrapers + agent |
-| Jobs | FastAPI + CLI entrypoints | Local trigger (`POST /jobs/weekly` or `python -m digest run-weekly`); no need to host a server |
+| Language | Python 3.12 | Scrapers + agent pipeline |
+| Jobs | CLI (`digest`) | `python -m digest run-weekly` locally; GitHub Actions in prod |
 | Cron | GitHub Actions `schedule` | Free, secrets, good enough for one weekly run |
 | DB | Supabase Postgres | One project, tables + optional dashboard |
 | LLM | OpenAI | `gpt-4o-mini` for per-item summaries; a stronger model for rank + email |
 | Email | [Resend](https://resend.com) | Simple API, good HTML, free tier is plenty for 1 email/week |
 | Config | `app/profiles/` | `user.py` persona + `tickers.py` watchlist |
 
-GitHub Actions will run the pipeline as a Python script (checkout → install → `python -m digest run-weekly`). FastAPI is for local/manual runs, not a production web service.
+GitHub Actions runs the pipeline as a one-off script (checkout → install → `python -m digest run-weekly`). No web server.
 
 Used when each phase needs it:
 
 - Phase 1–2: Python 3.12, httpx, feedparser
 - Phase 3: Supabase Postgres + Alembic
 - Phase 4: OpenAI
-- Phase 5: Resend, FastAPI, GitHub Actions
+- Phase 5: Resend, GitHub Actions
 - Phase 6: Refactor (after the pipeline works end-to-end)
 - Always: `app/profiles/` as the user profile (no user table)
 
@@ -156,7 +156,7 @@ Each item: ticker, type badge (`8-K` / `Form 4` / `News`), 2–4 sentence summar
 
 ### Phase 1 — Scraper spike (do this first)
 
-Goal: run one command and see real headlines and real filings. No database, no API keys except a SEC User-Agent string, no FastAPI.
+Goal: run one command and see real headlines and real filings. No database, no API keys except a SEC User-Agent string.
 
 Minimal throwaway-quality code is fine here. We can reshape it in Phase 2.
 
@@ -286,10 +286,22 @@ uv run python -m digest write-email
 
 ### Phase 5 — Send and schedule
 
-1. Resend: send the stored email; save `resend_id` / `sent_at`
+1. Resend: send the stored email; save `resend_id` / `sent_at`. Fail the job if send fails.
 2. Orchestrator: `python -m digest run-weekly` (ingest → summarize → rank → write → send). Idempotent per `week_start`; `--force` locally
-3. Thin FastAPI: health + `POST /jobs/weekly` for local/manual runs — **not** a hosted server
-4. GitHub Actions: Sunday cron + `workflow_dispatch`
+3. GitHub Actions: Sunday 12:00 UTC + `workflow_dispatch`
+
+Needs `RESEND_API_KEY`, `RESEND_FROM` (verified domain), and `recipient` in `app/profiles/user.py`.
+
+```bash
+# send this week's stored email only
+uv run python -m digest send
+
+# full pipeline, including send. Skips if this week already went out.
+uv run python -m digest run-weekly
+uv run python -m digest run-weekly --force
+```
+
+Repo secrets for `.github/workflows/weekly-digest.yml`: `DATABASE_URL`, `OPENAI_API_KEY`, `RESEND_API_KEY`, `RESEND_FROM`, `SEC_USER_AGENT`.
 
 ### Phase 6 — Refactor (after Phase 5 works)
 
@@ -316,7 +328,7 @@ app/
   database/     # Postgres helpers (read/write Supabase)
   services/     # text cleanup + send email via Resend
   profiles/     # user interests used to rank/personalize
-digest/         # CLI: python -m digest ingest
+digest/         # CLI: python -m digest run-weekly
 alembic/
   versions/     # Alembic migrations (start with raw_items)
 data/           # local JSON dumps from Phase 1–2
@@ -326,14 +338,13 @@ data/           # local JSON dumps from Phase 1–2
 - `app/config/settings.py` — load Python profile, 7-day window, JSON dump
 - `app/scrapers/yahoo_scraper.py` / `app/scrapers/sec_scraper.py` / `app/scrapers/sec_toolbox.py`
 - `app/ingest.py` — fetch both sources, shared item shape, in-memory dedupe
-- `digest/` — CLI (`python -m digest ingest`)
+- `digest/` — CLI (`python -m digest run-weekly`)
 - `app/agent/` — `client.py`, `schemas.py`; `steps/` — summarize, rank, write email
 - `app/database/` — connection + upsert helpers
 - `app/services/` — cleanup + Resend send + weekly orchestrator
 - `app/profiles/user.py` — persona, preferences, ranking criteria, recipient
 - `app/profiles/tickers.py` — watchlist (append to extend)
 - `alembic/versions/` — schema migrations against Supabase Postgres
-- `app/main.py` — FastAPI: health + `POST /jobs/weekly`
 - `.github/workflows/weekly-digest.yml` — cron (e.g. Sunday 12:00 UTC) + `workflow_dispatch`
 
 ## Secrets
@@ -351,7 +362,7 @@ GitHub Actions + local `.env`, never committed:
 ## Still needed before / during impl
 
 - Real ticker list (spike uses NVDA / AAPL / MSFT)
-- Later: recipient email, Resend-verified from-address, preferred send day/time
+- Resend-verified `RESEND_FROM` domain (required before `send` works)
 
 Until then, edit `app/profiles/user.py` and append names in `app/profiles/tickers.py`.
 
