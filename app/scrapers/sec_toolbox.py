@@ -7,6 +7,7 @@ FilingDocuments  download a filing and build raw_text
 from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 from re import sub
@@ -20,6 +21,8 @@ KEEP_FORMS = {"8-K", "10-Q", "10-K", "4"}
 EXCERPT_CHARS = 12_000
 EXHIBIT_99_MARKERS = ("ex99", "exhibit99", "ex-99", "exhibit-99")
 REQUEST_PAUSE = 0.2
+
+log = logging.getLogger("digest.scrapers.sec")
 
 
 def archive_url(cik: int, accession: str, filename: str = "") -> str:
@@ -142,7 +145,7 @@ class FilingDocuments:
             response.raise_for_status()
             return response.text
         except httpx.HTTPError as error:
-            print(f"sec get {url}: {error}")
+            log.warning("get %s failed: %s", url, error)
             return None
         finally:
             pause()
@@ -153,7 +156,7 @@ class FilingDocuments:
             response.raise_for_status()
             return response.json()
         except (httpx.HTTPError, json.JSONDecodeError, ValueError) as error:
-            print(f"sec get {url}: {error}")
+            log.warning("get %s failed: %s", url, error)
             return None
         finally:
             pause()

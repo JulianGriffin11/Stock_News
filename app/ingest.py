@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from collections import Counter
 
+from app.config.context import PipelineContext, make_context
+from app.config.logging import step_logger
 from app.config.models import RawItem
-from app.config.settings import Settings
 from app.database.raw_items import upsert_raw_items
 from app.scrapers.sec_scraper import SecFilingsScraper
 from app.scrapers.yahoo_scraper import YahooNewsScraper
@@ -54,12 +55,10 @@ def print_items(
         print(f"... {leftover} more in the JSON dump")
 
 
-def run_ingest(
-    settings: Settings | None = None,
-    *,
-    quiet: bool = False,
-) -> list[RawItem]:
-    settings = settings or Settings()
+def run_ingest(ctx: PipelineContext | None = None) -> list[RawItem]:
+    ctx = ctx or make_context()
+    log = step_logger("ingest", ctx)
+    settings = ctx.settings
     cutoff = settings.window_start()
 
     news = YahooNewsScraper(settings.tickers, cutoff).fetch()
@@ -76,9 +75,23 @@ def run_ingest(
 
     settings.write_json("raw_items.json", items)
     inserted, updated = upsert_raw_items(items, settings)
-    if not quiet:
-        counts = Counter(item["source"] for item in items)
-        parts = [f"{count} {source}" for source, count in sorted(counts.items())]
-        print(f"Ingest: {len(items)} items ({'; '.join(parts) or 'none'})")
-        print(f"Postgres: {inserted} inserted, {updated} updated")
+
+    source_counts = Counter(item["source"] for item in items)
+    source_parts = " ".join(
+        f"{source}={count}" for source, count in sorted(source_counts.items())
+    )
+    log.debug(
+        "done items=%d %s inserted=%d updated=%d",
+        len(items),
+        source_parts or "sources=none",
+        inserted,
+        updated,
+    )
+    ticker_counts = Counter(item["ticker"] for item in items)
+    if ticker_counts:
+        ticker_parts = " ".join(
+            f"{ticker}={count}"
+            for ticker, count in sorted(ticker_counts.items())
+        )
+        log.debug("by_ticker %s", ticker_parts)
     return items

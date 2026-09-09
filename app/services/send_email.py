@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import logging
+
 import resend
 
+from app.config.context import PipelineContext, make_context
+from app.config.logging import step_logger
 from app.config.settings import Settings
-from app.database.digest_runs import get_run_for_week, set_run_status
+from app.database.digest_runs import set_run_status
 from app.database.emails import get_email_for_run, mark_email_failed, mark_email_sent
 from app.database.models import EmailRow
+
+log = logging.getLogger("digest.send")
 
 
 def _deliver(email: EmailRow, settings: Settings) -> str:
@@ -28,42 +34,40 @@ def _deliver(email: EmailRow, settings: Settings) -> str:
 
 
 def run_send(
-    settings: Settings | None = None,
+    ctx: PipelineContext | None = None,
     force: bool = False,
-    *,
-    quiet: bool = False,
 ) -> int:
-    settings = settings or Settings()
-    week = settings.week_start()
-    run = get_run_for_week(week, settings)
+    ctx = ctx or make_context()
+    step_log = step_logger("send", ctx)
+    settings = ctx.settings
+    run = ctx.resolve_digest_run()
     if run is None:
-        if not quiet:
-            print(f"Send: no digest_run for week_start={week}. Run rank first.")
+        step_log.warning("skipped no digest_run — run rank first")
         return 0
 
     email = get_email_for_run(run.id, settings)
     if email is None:
-        if not quiet:
-            print(f"Send: no email for week_start={week}. Run write-email first.")
+        step_log.warning("skipped no email stored — run write-email first")
         return 0
 
     if email.status == "sent" and not force:
-        if not quiet:
-            print(
-                f"Send: already sent for week_start={week}. "
-                "Pass --force to send again."
-            )
+        step_log.warning("skipped already sent — pass --force to send again")
         return 0
 
+    recipient = settings.require_recipient()
     try:
         resend_id = _deliver(email, settings)
     except Exception:
         mark_email_failed(email.id, settings)
         set_run_status(run.id, "failed", settings)
+        log.exception(
+            "week_start=%s step=send failed recipient=%s",
+            ctx.week_start,
+            recipient,
+        )
         raise
 
     mark_email_sent(email.id, resend_id, settings)
     set_run_status(run.id, "sent", settings)
-    if not quiet:
-        print(f"Send: sent to {settings.require_recipient()} ({resend_id})")
+    step_log.debug("done recipient=%s resend_id=%s", recipient, resend_id)
     return 1

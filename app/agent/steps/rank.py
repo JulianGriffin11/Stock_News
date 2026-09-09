@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 
 from app.agent.client import parse_response
+from app.agent.prompts import pack_summary
 from app.agent.schemas import RankOut
+from app.config.context import PipelineContext, make_context
+from app.config.logging import step_logger
 from app.config.settings import Settings
-from app.database.digest_runs import get_run_for_week, upsert_run
+from app.database.digest_runs import upsert_run
 from app.database.models import ItemSummaryRow
 from app.database.summaries import list_week_summaries
 
@@ -29,23 +32,7 @@ Do not invent items. Do not pad the list.
 def _user_input(summaries: list[ItemSummaryRow], settings: Settings) -> str:
     profile = settings.profile
     prefs = ", ".join(f"{key}={value}" for key, value in profile.preferences.items())
-    rows = []
-    for row in summaries:
-        item = row.raw_item
-        rows.append(
-            {
-                "summary_id": str(row.id),
-                "ticker": item.ticker,
-                "source": item.source,
-                "item_type": row.item_type,
-                "title": item.title,
-                "published_at": item.published_at.isoformat(),
-                "summary": row.summary,
-                "why_it_matters": row.why_it_matters,
-                "key_numbers": row.key_numbers,
-                "url": item.url,
-            }
-        )
+    rows = [pack_summary(row) for row in summaries]
     return (
         f"Reader: {profile.name}, {profile.title} ({profile.expertise_level}).\n"
         f"Interests: {', '.join(profile.interests)}\n"
@@ -67,26 +54,24 @@ def _valid_picks(out: RankOut, allowed: set[str]) -> list[tuple[str, str]]:
 
 
 def run_rank(
-    settings: Settings | None = None,
+    ctx: PipelineContext | None = None,
     force: bool = False,
-    *,
-    quiet: bool = False,
 ) -> int:
-    settings = settings or Settings()
-    week = settings.week_start()
-    existing = get_run_for_week(week, settings)
+    ctx = ctx or make_context()
+    log = step_logger("rank", ctx)
+    settings = ctx.settings
+    week = ctx.week_start
+    existing = ctx.resolve_digest_run()
     if existing is not None and not force:
-        if not quiet:
-            print(
-                f"Rank: digest already exists for week_start={week}. "
-                "Pass --force to replace."
-            )
+        log.warning(
+            "skipped digest already exists — pass --force to replace",
+        )
         return 0
 
     summaries = list_week_summaries(settings)
+    candidates = len(summaries)
     if not summaries:
-        if not quiet:
-            print("Rank: no summaries in the 7-day window. Run summarize first.")
+        log.warning("skipped no summaries in 7-day window — run summarize first")
         return 0
 
     out = parse_response(
@@ -110,6 +95,6 @@ def run_rank(
         status="ranked",
         settings=settings,
     )
-    if not quiet:
-        print(f"Rank: {len(picks)} items for week_start={week}")
+    ctx.resolve_digest_run(refresh=True)
+    log.debug("done candidates=%d picks=%d", candidates, len(picks))
     return len(picks)

@@ -307,11 +307,11 @@ Repo secrets for `.github/workflows/weekly-digest.yml`: `DATABASE_URL`, `OPENAI_
 
 Cleanup once `run-weekly` is live. Not blocking V1 — each step still works standalone via CLI and Postgres today.
 
-1. **`PipelineContext`** — small dataclass (`settings`, `week_start`, optional `digest_run`) created once in `run-weekly` and passed step to step. Cuts repeated `Settings()` / `week_start()` boilerplate when the orchestrator chains ingest → summarize → rank → write → send in one process. Separate CLI commands can keep loading from DB as they do now.
-2. **Shared `pack_summary()`** — one helper (e.g. `app/agent/prompts.py`) that turns an `ItemSummaryRow` into the LLM dict. `steps/rank.py` and `steps/write_email.py` duplicate this today.
+1. ~~**`PipelineContext`**~~ — done in `app/config/context.py`; `run-weekly` creates one (`settings`, `week_start`, optional `digest_run`) and passes it ingest → summarize → rank → write → send. Standalone CLI commands still load `digest_run` from Postgres when it is not already on the context.
+2. ~~**Shared `pack_summary()`**~~ — done in `app/agent/prompts.py`; used by `steps/rank.py` and `steps/write_email.py`.
 3. **Rank tuning** — as the watchlist grows (10–20 tickers), bump ranked cap to 8–12 and add diversity rules (max picks per ticker; don’t let one earnings week dominate). “Worth a look” filings section already covers the second tier.
 4. **Model roles** — keep cheap model for summarize volume; strongest model on rank; email can stay cheap (1 call/week).
-5. **Logging** — replace ad-hoc `print()` across ingest and agent steps with `logging` (`info` / `warning` / `error`). Log step start/end, counts, and failures with context (`week_start`, command). Phase 5 can wire `basicConfig` in `run-weekly` for GitHub Actions; this phase is the full cleanup.
+5. ~~**Logging**~~ — done in `app/config/logging.py`; one INFO line per step (duration + brief result), httpx/OpenAI HTTP noise suppressed; `-v` for step details and per-item progress.
 
 ### Phase 7 — Docs
 
@@ -336,6 +336,7 @@ data/           # local JSON dumps from Phase 1–2
 ```
 
 - `app/config/settings.py` — load Python profile, 7-day window, JSON dump
+- `app/config/context.py` — `PipelineContext` for one pipeline run
 - `app/scrapers/yahoo_scraper.py` / `app/scrapers/sec_scraper.py` / `app/scrapers/sec_toolbox.py`
 - `app/ingest.py` — fetch both sources, shared item shape, in-memory dedupe
 - `digest/` — CLI (`python -m digest run-weekly`)

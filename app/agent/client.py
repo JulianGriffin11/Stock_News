@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TypeVar
 
 from openai import OpenAI
@@ -10,6 +11,8 @@ from pydantic import BaseModel
 from app.config.settings import Settings
 
 T = TypeVar("T", bound=BaseModel)
+
+log = logging.getLogger("digest.agent")
 
 
 def parse_response(
@@ -20,6 +23,12 @@ def parse_response(
     settings: Settings | None = None,
 ) -> T:
     settings = settings or Settings()
+    log.debug(
+        "model=%s schema=%s input_chars=%d",
+        model,
+        schema.__name__,
+        len(user_input),
+    )
     client = OpenAI(api_key=settings.require_openai_api_key())
     response = client.responses.parse(
         model=model,

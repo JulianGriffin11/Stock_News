@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator, Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -18,6 +19,8 @@ from app.scrapers.sec_toolbox import (
     form_kind,
     pause,
 )
+
+log = logging.getLogger("digest.scrapers.sec")
 
 
 class SecFilingsScraper:
@@ -69,7 +72,7 @@ class SecFilingsScraper:
     ) -> list[RawItem]:
         info = ticker_map.get(ticker)
         if not info:
-            print(f"{ticker}: no CIK found")
+            log.warning("ticker=%s no CIK found", ticker)
             return []
 
         cik = info["cik"]

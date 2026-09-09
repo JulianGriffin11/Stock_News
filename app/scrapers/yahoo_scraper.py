@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -17,6 +18,8 @@ YAHOO_FEED = (
     "https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US"
 )
 USER_AGENT = "StockNewsDigest/0.1 (personal weekly digest)"
+
+log = logging.getLogger("digest.scrapers.yahoo")
 
 
 class YahooNewsScraper:
@@ -44,7 +47,7 @@ class YahooNewsScraper:
             response = client.get(url)
             response.raise_for_status()
         except httpx.HTTPError as error:
-            print(f"yahoo {ticker}: {error}")
+            log.warning("ticker=%s fetch failed: %s", ticker, error)
             return []
 
         feed = feedparser.parse(response.content)

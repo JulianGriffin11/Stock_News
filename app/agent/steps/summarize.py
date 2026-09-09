@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from app.agent.client import parse_response
 from app.agent.schemas import ItemSummaryOut
+from app.config.context import PipelineContext, make_context
+from app.config.logging import step_logger
 from app.config.settings import Settings
 from app.database.models import RawItemRow
 from app.database.summaries import insert_summary, list_unsummarized
@@ -36,12 +38,14 @@ def _user_input(item: RawItemRow, settings: Settings) -> str:
     )
 
 
-def run_summarize(settings: Settings | None = None, *, quiet: bool = False) -> int:
-    settings = settings or Settings()
+def run_summarize(ctx: PipelineContext | None = None) -> int:
+    ctx = ctx or make_context()
+    log = step_logger("summarize", ctx)
+    settings = ctx.settings
     items = list_unsummarized(settings)
+    candidates = len(items)
     if not items:
-        if not quiet:
-            print("Summarize: nothing new")
+        log.debug("done candidates=0 written=0")
         return 0
 
     written = 0
@@ -63,6 +67,6 @@ def run_summarize(settings: Settings | None = None, *, quiet: bool = False) -> i
             settings=settings,
         )
         written += 1
-    if not quiet:
-        print(f"Summarize: wrote {written} item_summaries")
+        log.debug("summarized ticker=%s id=%s", item.ticker, item.id)
+    log.debug("done candidates=%d written=%d", candidates, written)
     return written

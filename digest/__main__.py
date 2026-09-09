@@ -5,7 +5,8 @@ from __future__ import annotations
 import argparse
 
 from app.agent.steps import run_rank, run_summarize, run_write_email
-from app.config.settings import Settings
+from app.config.context import make_context
+from app.config.logging import configure_logging, run_timed_step
 from app.ingest import run_ingest
 from app.services.send_email import run_send
 from app.services.weekly import run_weekly
@@ -13,6 +14,12 @@ from app.services.weekly import run_weekly
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="digest")
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable DEBUG logging (step details, per-item progress, DB totals)",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser(
         "ingest",
@@ -59,25 +66,26 @@ def main(argv: list[str] | None = None) -> int:
         help="Replace this week's digest and send again",
     )
     args = parser.parse_args(argv)
-    settings = Settings()
+    configure_logging(verbose=args.verbose)
+    ctx = make_context()
 
     if args.command == "ingest":
-        run_ingest(settings)
+        run_timed_step(ctx, "ingest", run_ingest)
         return 0
     if args.command == "summarize":
-        run_summarize(settings)
+        run_timed_step(ctx, "summarize", run_summarize)
         return 0
     if args.command == "rank":
-        run_rank(settings, force=args.force)
+        run_timed_step(ctx, "rank", run_rank, force=args.force)
         return 0
     if args.command == "write-email":
-        run_write_email(settings, force=args.force)
+        run_timed_step(ctx, "write-email", run_write_email, force=args.force)
         return 0
     if args.command == "send":
-        run_send(settings, force=args.force)
+        run_timed_step(ctx, "send", run_send, force=args.force)
         return 0
     if args.command == "run-weekly":
-        run_weekly(settings, force=args.force)
+        run_weekly(ctx, force=args.force)
         return 0
     return 1
 
