@@ -12,6 +12,7 @@ from app.config.settings import Settings
 from app.database.digest_runs import set_run_status
 from app.database.emails import get_email_for_run, mark_email_failed, mark_email_sent
 from app.database.models import EmailRow
+from app.email.render import footer_attachments
 
 log = logging.getLogger("digest.send")
 
@@ -25,6 +26,7 @@ def _deliver(email: EmailRow, settings: Settings) -> str:
             "subject": email.subject,
             "html": email.html_body,
             "text": email.text_body,
+            "attachments": footer_attachments(),
         }
     )
     resend_id = result["id"] if isinstance(result, dict) else getattr(result, "id", None)

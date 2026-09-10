@@ -1,4 +1,4 @@
-"""SEC EDGAR filings scraper for 8-K, 10-Q, 10-K, and Form 4."""
+"""SEC EDGAR filings scraper for 8-K, 10-Q, and 10-K."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ log = logging.getLogger("digest.scrapers.sec")
 
 
 class SecFilingsScraper:
-    """For each ticker, pull recent 8-K / 10-Q / 10-K / Form 4 as RawItems."""
+    """For each ticker, pull recent 8-K / 10-Q / 10-K as RawItems."""
 
     def __init__(
         self,
@@ -114,6 +114,8 @@ class SecFilingsScraper:
         return items
 
     def _in_window(self, form: str, filing_date: str, cutoff: date) -> bool:
+        if "/A" in form.upper():
+            return False
         if form_kind(form) not in KEEP_FORMS:
             return False
         try:

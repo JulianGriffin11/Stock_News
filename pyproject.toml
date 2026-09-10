@@ -10,6 +10,7 @@ dependencies = [
     "feedparser>=6.0.14",
     "httpx>=0.28.1",
     "ipykernel>=7.3.0",
+    "jinja2>=3.1.6",
     "openai>=3.7.0",
     "psycopg2-binary>=2.9.12",
     "pydantic-settings>=2.15.0",
@@ -28,3 +29,7 @@ digest = "digest.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app", "digest"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"app/email/static/linkedin.png" = "app/email/static/linkedin.png"
+"app/email/static/github.png" = "app/email/static/github.png"

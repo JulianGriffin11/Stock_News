@@ -1,0 +1,26 @@
+Weekly digest
+
+Hi {{ reader_name }},
+
+{% for paragraph in overview %}
+{{ paragraph }}
+
+{% endfor %}
+Until next week,
+Wealth Engine
+
+{% for item in listings %}
+{{ item.step }}. {{ item.title }}
+{{ item.body }}
+{{ item.url }}
+
+{% endfor %}
+"{{ quote.text }}"
+— {{ quote.attribution }}
+
+{{ footer.blurb }}
+{% for social in footer.socials %}
+{{ social.label }}: {{ social.url }}
+{% endfor %}
+{{ footer.address_lines[0] }}
+{{ footer.address_lines[1] }}

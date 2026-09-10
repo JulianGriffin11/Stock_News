@@ -14,8 +14,8 @@ INSTRUCTIONS = """\
 You summarize one news item or SEC filing for a long-term fundamental investor.
 
 Return JSON only, matching the schema.
-- summary: 2–4 sentences. What happened. Copy figures only if they appear in the text.
-- why_it_matters: 1–2 sentences on the investment thesis (quality, cash flow, valuation, durability).
+- summary: 1 sentence. What happened. Copy figures only if they appear in the text.
+- why_it_matters: 1 sentence on the investment thesis (quality, cash flow, valuation, durability).
 - item_type: earnings | 8-k | form-4 | 10-q | 10-k | product | news | other
 - key_numbers: short strings copied from the text. Empty list if none.
 

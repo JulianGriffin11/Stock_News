@@ -9,13 +9,14 @@ A personal, once-a-week email of the most useful news and filings for a small na
 **Keep**
 
 - RSS per ticker (Yahoo Finance). Volume is enough for 5–15 names. Google News search RSS was tried in the spike and dropped — it often returns an empty feed to a script.
-- SEC EDGAR (official `data.sec.gov` submissions, not a paid “SEC API”). Filter to **8-K, 10-Q, 10-K, Form 4**. This is the investor-specific signal RSS misses.
+- SEC EDGAR (official `data.sec.gov` submissions, not a paid “SEC API”). Filter to **8-K, 10-Q, 10-K**. Skip amendments (`/A`). Form 4 is deferred for V1 (too many on mega-caps). This is the investor-specific signal RSS misses.
 - Three-agent LLM pipeline: summarize → rank → write email.
 - Supabase Postgres, OpenAI, Resend, GitHub Actions weekly cron.
 
 **Skip for V1**
 
 - Company IR scraping (fragile, per-site, anti-bot). Revisit later if a specific company has a clean IR RSS/Atom feed — many do, and that is a cheap add.
+- Form 4 insider filings (volume). Revisit later as officer-buys-only, header-only (no HTML download).
 - Price/quote APIs, multi-user auth, hosted always-on web API.
 
 RSS alone usually fills an email. SEC is what makes it *investor* rather than *news*. Both stay in V1; IR waits.
@@ -93,7 +94,7 @@ flowchart LR
 1. **Ingest** — For each ticker, pull Yahoo Finance RSS (feedparser) and SEC recent filings. Store text we can legally/easily get: RSS title + summary + link (no full-article scrape), SEC 8-K/10-Q header + first relevant section excerpt (capped, e.g. 8–12k chars). Dedupe on `external_id`. Window: last 7 days.
 2. **Agent 1 (summarize)** — Loop unsummarized `raw_items`. Each call returns short JSON: summary, why it matters to an investor, type. Write `item_summaries`. Cheap model; skip items with empty text.
 3. **Agent 2 (rank)** — One call with this week’s summaries + `ranking_criteria`. Returns top 5–10 ids plus a one-line reason each. Persist on `digest_runs`. If fewer than 5 items exist, send what we have rather than padding.
-4. **Agent 3 (email)** — One call: ranked items + tone → subject + HTML + plaintext. Store, then Resend `emails.send`. Fail the job if send fails.
+4. **Agent 3 (email)** — One call: ranked items + tone → subject + 1–3 overview paragraphs. A Jinja2 template (Arcane layout) turns those plus stored summaries into HTML + plaintext. Store, then Resend `emails.send`. Fail the job if send fails.
 
 Idempotency: if a digest already exists for this `week_start`, skip (or `--force` locally).
 
@@ -104,7 +105,7 @@ Filings are not a pile of numbers. Most of what an investor cares about is prose
 | Form | What it really is | Typical size | What an investor wants |
 |---|---|---|---|
 | **8-K** | Something material happened — CEO left, acquisition, earnings release, guidance, lawsuit | Often short; Exhibit 99.1 is frequently a press release | The event, in plain English |
-| **Form 4** | Insider bought/sold shares | Tiny, tabular | Who, buy vs sell, size, role |
+| **Form 4** | Insider bought/sold shares | Tiny, tabular | Who, buy vs sell, size, role. **Skipped in V1** (volume); header-only if re-enabled |
 | **10-Q** | Quarterly report: financials **and** MD&A (management’s written story of the quarter) | Long | Revenue/margin/EPS vs last year, guidance, one big risk or miss |
 | **10-K** | Annual version of the above, plus business description and risk factors | Very long | Same idea, plus what changed in the business this year |
 
@@ -116,7 +117,7 @@ Agent 1 is not interpreting tone. It translates a disclosure into: what happened
 
 - 8-K cover page + item list (Item 2.02 earnings, Item 5.02 officer departure, etc.)
 - Exhibit 99.1 earnings release when present
-- Form 4 (or the SEC submissions JSON fields: form, date, reporting owner)
+- Form 4 is not ingested in V1. If re-enabled, use submissions JSON only (form, date, company) — do not download the HTML table
 
 **Do not dump the whole document for V1**
 
@@ -124,7 +125,7 @@ Agent 1 is not interpreting tone. It translates a disclosure into: what happened
 
 RSS stays as title + snippet + link. No full-article scrape.
 
-Same JSON shape for news and filings, with `item_type` so the email can group them:
+Same JSON shape for news and filings, with `item_type` so the email can label each item:
 
 ```json
 {
@@ -137,18 +138,19 @@ Same JSON shape for news and filings, with `item_type` so the email can group th
 
 ## Shape of the weekly email
 
-Mixed sources, one digest, **sections by type**, not one undifferentiated article list. Ranked 5–10 items overall, then grouped.
+Mixed sources, one digest. Agent 3 writes **subject + overview only**. Python renders a table-based Arcane HTML template (wine palette, Inter + Instrument Serif). Ranked 5–10 items stay in **rank order**, not grouped by type.
 
 **Subject:** `Weekly digest: NVDA, AAPL, AMZN — earnings, one 8-K, two headlines`
 
 **Body**
 
-1. **This week in one paragraph** — Agent 3’s overview of the ranked set
-2. **Filings** — 8-Ks / Form 4s / “10-Q filed” (facts + EDGAR link)
-3. **News** — RSS items that survived ranking
-4. **Worth a look, not ranked** — optional: other 10-Qs filed, so you know they exist without stuffing the LLM
+1. **Letter** — greeting + Agent 3’s 1–3 overview paragraphs + sign-off
+2. **Hero image** — one full-width editorial photo
+3. **This week** — numbered listings in rank order. Title is `TICKER · 8-K` (or News / earnings / 10-Q). Body is the stored summary + why it matters. Link is the source URL
+4. **Quote** — fixed Howard Marks line
+5. **Footer** — blurb, LinkedIn + GitHub icons, placeholder address
 
-Each item: ticker, type badge (`8-K` / `Form 4` / `News`), 2–4 sentence summary, why it matters, link.
+After `write-email`, open `data/email-preview.html` in a browser to check the layout without sending.
 
 ---
 
@@ -185,7 +187,7 @@ SEC requires a descriptive `User-Agent` (name + email). Put it in `.env` as `SEC
 
 1. Resolve ticker → CIK from `https://www.sec.gov/files/company_tickers.json` (cache the JSON locally).
 2. Pull recent filings from `https://data.sec.gov/submissions/CIK{cik10}.json`.
-3. Keep forms **8-K, 10-Q, 10-K, 4** (Form 4 = insider). Filter to last 7 days.
+3. Keep forms **8-K, 10-Q, 10-K**. Skip amendments (`8-K/A`, `10-Q/A`, …). Filter to last 7 days.
 4. For each hit, store accession, form, filing date, company, and a document URL. Optionally fetch a **capped excerpt** (first ~8–12k chars) of the primary document — if that fetch is flaky, skip excerpt in the spike and keep metadata only.
 
 **Pass criteria:** at least one real filing in the window (or, if a quiet week, clearly show the most recent filings *outside* the window so we know the API works). Handle 429/403 (User-Agent missing is the usual failure).
@@ -268,7 +270,7 @@ Tables: `item_summaries`, `digest_runs`, and `emails` (stored unsent; Resend wai
 
 1. **Summarize** — loop new `raw_items` → short JSON (summary, why it matters, type). `gpt-4o-mini`
 2. **Rank** — one call over this week’s summaries + `ranking_criteria` in `user.py` → top 5–10 ids + reasons. `gpt-4o`. If fewer than 5 items, keep what we have
-3. **Write email** — ranked items + `email_tone` → subject + HTML + plaintext. Store on `emails` (unsent). Idempotent per `week_start` (Monday UTC); `--force` replaces
+3. **Write email** — ranked items + `email_tone` → subject + overview. Jinja2 renders HTML + plaintext. Store on `emails` (unsent) and write `data/email-preview.html`. Idempotent per `week_start` (Monday UTC); `--force` replaces
 
 ```bash
 # create item_summaries + digest_runs + emails
@@ -309,7 +311,7 @@ Cleanup once `run-weekly` is live. Not blocking V1 — each step still works sta
 
 1. ~~**`PipelineContext`**~~ — done in `app/config/context.py`; `run-weekly` creates one (`settings`, `week_start`, optional `digest_run`) and passes it ingest → summarize → rank → write → send. Standalone CLI commands still load `digest_run` from Postgres when it is not already on the context.
 2. ~~**Shared `pack_summary()`**~~ — done in `app/agent/prompts.py`; used by `steps/rank.py` and `steps/write_email.py`.
-3. **Rank tuning** — as the watchlist grows (10–20 tickers), bump ranked cap to 8–12 and add diversity rules (max picks per ticker; don’t let one earnings week dominate). “Worth a look” filings section already covers the second tier.
+3. **Rank tuning** — as the watchlist grows (10–20 tickers), bump ranked cap to 8–12 and add diversity rules (max picks per ticker; don’t let one earnings week dominate).
 4. **Model roles** — keep cheap model for summarize volume; strongest model on rank; email can stay cheap (1 call/week).
 5. ~~**Logging**~~ — done in `app/config/logging.py`; one INFO line per step (duration + brief result), httpx/OpenAI HTTP noise suppressed; `-v` for step details and per-item progress.
 
@@ -325,6 +327,7 @@ app/
   scrapers/     # RSS + SEC — collect fresh content
   ingest.py     # fetch, shared item shape, in-memory dedupe
   agent/        # LLM client + schemas; steps/ has summarize, rank, write email
+  email/        # Arcane Jinja2 templates + render_digest()
   database/     # Postgres helpers (read/write Supabase)
   services/     # text cleanup + send email via Resend
   profiles/     # user interests used to rank/personalize
@@ -341,6 +344,7 @@ data/           # local JSON dumps from Phase 1–2
 - `app/ingest.py` — fetch both sources, shared item shape, in-memory dedupe
 - `digest/` — CLI (`python -m digest run-weekly`)
 - `app/agent/` — `client.py`, `schemas.py`; `steps/` — summarize, rank, write email
+- `app/email/` — Arcane theme, Jinja2 templates, `render_digest()`
 - `app/database/` — connection + upsert helpers
 - `app/services/` — cleanup + Resend send + weekly orchestrator
 - `app/profiles/user.py` — persona, preferences, ranking criteria, recipient

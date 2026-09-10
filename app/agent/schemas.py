@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 ItemType = Literal[
     "earnings",
@@ -46,5 +46,12 @@ class RankOut(BaseModel):
 
 class EmailOut(BaseModel):
     subject: str = Field(min_length=1)
-    html_body: str = Field(min_length=1)
-    text_body: str = Field(min_length=1)
+    overview: list[str] = Field(min_length=1, max_length=3)
+
+    @field_validator("overview")
+    @classmethod
+    def overview_paragraphs(cls, value: list[str]) -> list[str]:
+        cleaned = [paragraph.strip() for paragraph in value if paragraph.strip()]
+        if not cleaned:
+            raise ValueError("overview must contain at least one paragraph")
+        return cleaned

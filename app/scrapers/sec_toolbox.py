@@ -17,7 +17,7 @@ from bs4 import BeautifulSoup
 
 COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik10}.json"
-KEEP_FORMS = {"8-K", "10-Q", "10-K", "4"}
+KEEP_FORMS = {"8-K", "10-Q", "10-K"}
 EXCERPT_CHARS = 12_000
 EXHIBIT_99_MARKERS = ("ex99", "exhibit99", "ex-99", "exhibit-99")
 REQUEST_PAUSE = 0.2
@@ -26,7 +26,9 @@ log = logging.getLogger("digest.scrapers.sec")
 
 
 def archive_url(cik: int, accession: str, filename: str = "") -> str:
-    folder = f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession.replace('-', '')}"
+    folder = (
+        f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession.replace('-', '')}"
+    )
     if not filename:
         return folder
     return f"{folder}/{filename}"
@@ -88,6 +90,8 @@ class FilingDocuments:
         accession: str,
     ) -> str:
         header = self._header(company, form, filing_date, sec_items, description)
+        if form_kind(form) == "4":
+            return header
         body = self.excerpt(primary_url)
         if form_kind(form) == "8-K":
             exhibit = self._exhibit_99(cik, accession, primary_url)

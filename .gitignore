@@ -1,5 +1,6 @@
 .env
 data/*.json
+data/email-preview.html
 __pycache__/
 .venv/
 *.pyc

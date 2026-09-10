@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+    <link rel="stylesheet" href="{{ theme.font_href }}" />
+    <title>{{ preview }}</title>
+    <!--[if mso]>
+    <style>
+      table, td { font-family: Georgia, 'Times New Roman', serif !important; }
+    </style>
+    <![endif]-->
+    <style>
+      @media only screen and (max-width: 600px) {
+        .pad { padding-left: 24px !important; padding-right: 24px !important; }
+        .title-72 { font-size: 48px !important; line-height: 1.05 !important; }
+        .title-48 { font-size: 32px !important; }
+        .stack { display: block !important; width: 100% !important; max-width: 100% !important; }
+        .stack-gap { height: 24px !important; }
+      }
+    </style>
+  </head>
+  <body style="margin:0;padding:0;background-color:#ffffff;font-family:{{ theme.font_sans }};">
+    <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">{{ preview }}</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;margin:0;padding:0;width:100%;">
+      <tr>
+        <td align="center" style="padding:0;">
+          <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:640px;background-color:{{ theme.bg }};">
+            <tr>
+              <td class="pad" style="padding:40px 40px 24px 40px;">
+                <p style="margin:0;font-family:{{ theme.font_sans }};font-size:13px;line-height:1.5;letter-spacing:1.4px;color:{{ theme.fg_3 }};text-transform:uppercase;">
+                  Digest
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td class="pad" style="padding:0 40px 80px 40px;">
+                <h1 class="title-72" style="margin:64px 0 0 0;font-family:{{ theme.font_serif }};font-size:72px;line-height:1;letter-spacing:-0.52px;font-weight:400;color:{{ theme.fg }};text-transform:capitalize;">
+                  Weekly digest
+                </h1>
+                <p style="margin:32px 0 0 0;max-width:430px;font-family:{{ theme.font_sans }};font-size:15px;line-height:1.5;letter-spacing:0.25px;color:{{ theme.fg_2 }};">
+                  Hi {{ reader_name }},
+                </p>
+                {% for paragraph in overview %}
+                <p style="margin:32px 0 0 0;max-width:430px;font-family:{{ theme.font_sans }};font-size:15px;line-height:1.5;letter-spacing:0.25px;color:{{ theme.fg_2 }};">
+                  {{ paragraph }}
+                </p>
+                {% endfor %}
+                <p style="margin:32px 0 0 0;max-width:430px;font-family:{{ theme.font_sans }};font-size:15px;line-height:1.5;letter-spacing:0.25px;color:{{ theme.fg }};">
+                  Until next week,<br />Wealth Engine
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0;background-color:{{ theme.bg_2 }};">
+                <img
+                  src="{{ hero.src }}"
+                  alt="{{ hero.alt }}"
+                  width="640"
+                  style="display:block;width:100%;max-width:640px;height:auto;border:0;"
+                />
+              </td>
+            </tr>
+            <tr>
+              <td class="pad" style="padding:88px 40px 0 40px;">
+                <h2 class="title-72" style="margin:64px 0 0 0;font-family:{{ theme.font_serif }};font-size:72px;line-height:1;letter-spacing:-0.52px;font-weight:400;color:{{ theme.fg }};text-transform:capitalize;">
+                  This week
+                </h2>
+                {% for item in listings %}
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:{% if loop.first %}88px{% else %}80px{% endif %} 0 0 0;">
+                  <tr>
+                    <td class="stack" valign="top" width="260" style="width:260px;max-width:260px;vertical-align:top;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                        <tr>
+                          <td valign="top" width="40" style="width:40px;vertical-align:top;">
+                            <table role="presentation" width="40" cellpadding="0" cellspacing="0" border="0" style="width:40px;background-color:{{ theme.bg_2 }};text-align:center;">
+                              <tr>
+                                <td align="center" style="padding:8px 0;font-family:{{ theme.font_serif }};font-size:20px;line-height:1.5;color:{{ theme.fg }};">
+                                  {{ item.step }}
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                          <td width="22" style="width:22px;font-size:0;line-height:0;">&nbsp;</td>
+                          <td valign="top" style="vertical-align:top;padding-top:8px;">
+                            <p style="margin:0;font-family:{{ theme.font_sans }};font-size:15px;line-height:1.5;letter-spacing:0.25px;color:{{ theme.fg }};">
+                              {{ item.title }}
+                            </p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                    <td class="stack-gap" width="20" style="width:20px;font-size:0;line-height:0;">&nbsp;</td>
+                    <td class="stack" valign="top" style="vertical-align:top;">
+                      <p style="margin:0;font-family:{{ theme.font_sans }};font-size:15px;line-height:1.5;letter-spacing:0.25px;color:{{ theme.fg }};">
+                        {{ item.body }}
+                      </p>
+                      <p style="margin:8px 0 0 0;">
+                        <a href="{{ item.url }}" style="font-family:{{ theme.font_sans }};font-size:15px;line-height:1.5;color:{{ theme.fg }};text-decoration:underline;">
+                          {{ item.cta_label }}
+                        </a>
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+                {% endfor %}
+              </td>
+            </tr>
+            <tr>
+              <td class="pad" style="padding:104px 40px 80px 40px;">
+                <p class="title-48" style="margin:0;font-family:{{ theme.font_serif }};font-size:48px;line-height:1.25;letter-spacing:0;word-spacing:0.12em;font-weight:400;color:{{ theme.fg }};">
+                  &ldquo;{{ quote.text }}&rdquo;
+                </p>
+                <p style="margin:48px 0 0 0;font-family:{{ theme.font_sans }};font-size:20px;line-height:1.5;letter-spacing:0;word-spacing:0.08em;color:{{ theme.fg }};">
+                  {{ quote.attribution }}
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td class="pad" style="padding:80px 40px 64px 40px;border-top:1px solid {{ theme.stroke }};">
+                <p style="margin:0;max-width:320px;font-family:{{ theme.font_sans }};font-size:13px;line-height:1.5;letter-spacing:0.2px;color:{{ theme.fg_3 }};">
+                  {{ footer.blurb }}
+                </p>
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:32px 0 0 0;">
+                  <tr>
+                    {% for social in footer.socials %}
+                    <td style="padding:0 {% if not loop.last %}24px{% else %}0{% endif %} 0 0;">
+                      <a href="{{ social.url }}" style="display:inline-block;text-decoration:none;">
+                        <img
+                          src="{{ social.src }}"
+                          alt="{{ social.label }}"
+                          width="20"
+                          height="20"
+                          style="display:block;border:0;outline:none;"
+                        />
+                      </a>
+                    </td>
+                    {% endfor %}
+                  </tr>
+                </table>
+                <p style="margin:32px 0 0 0;font-family:{{ theme.font_sans }};font-size:11px;line-height:1.5;letter-spacing:0.3px;color:{{ theme.fg_3 }};">
+                  {{ footer.address_lines[0] }}<br />
+                  {{ footer.address_lines[1] }}
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
