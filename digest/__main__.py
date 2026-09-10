@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import argparse
 
-from app.agent.steps import run_rank, run_summarize, run_write_email
+from app.agent import run_rank, run_summarize, run_write_email
 from app.config.context import make_context
 from app.config.logging import configure_logging, run_timed_step
-from app.ingest import run_ingest
-from app.services.send_email import run_send
-from app.services.weekly import run_weekly
+from app.services import run_ingest, run_send, run_weekly
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -23,7 +21,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser(
         "ingest",
-        help="Fetch Yahoo RSS + SEC filings, write JSON, upsert to Postgres",
+        help="Fetch Yahoo RSS + SEC filings and upsert to Postgres",
     )
     sub.add_parser(
         "summarize",

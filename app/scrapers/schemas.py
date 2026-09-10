@@ -1,4 +1,4 @@
-"""Shared shapes used across ingest and later pipeline stages."""
+"""Shared scrape output shape."""
 
 from __future__ import annotations
 

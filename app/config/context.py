@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from app.config.settings import Settings
 
 if TYPE_CHECKING:
-    from app.database.models import DigestRunRow
+    from app.db.models import DigestRunRow
 
 
 @dataclass
@@ -21,9 +21,9 @@ class PipelineContext:
     def resolve_digest_run(self, *, refresh: bool = False) -> DigestRunRow | None:
         """Return the in-memory digest_run, or load it from Postgres once."""
         if refresh or self.digest_run is None:
-            from app.database.digest_runs import get_run_for_week
+            from app.db.queries import get_run_for_week
 
-            self.digest_run = get_run_for_week(self.week_start, self.settings)
+            self.digest_run = get_run_for_week(self.week_start)
         return self.digest_run
 
 

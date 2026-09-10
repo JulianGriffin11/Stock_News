@@ -36,8 +36,6 @@ USER_PROFILE = {
     },
     "expertise_level": "Intermediate",
     "recipient": "juliangriffinj@gmail.com",
-    "timezone": "America/New_York",
-    "send_day": "sunday",
     "ranking_criteria": (
         "Prioritize information that could materially change the long-term "
         "investment thesis or the estimated intrinsic value of a company. Favor "

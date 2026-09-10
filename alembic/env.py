@@ -8,7 +8,7 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 
 from app.config.settings import Settings
-from app.database.models import Base
+from app.db.models import Base
 
 config = context.config
 

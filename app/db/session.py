@@ -9,24 +9,23 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.config.settings import Settings
-
 _engine: Engine | None = None
 _SessionLocal: sessionmaker[Session] | None = None
 
 
-def get_engine(settings: Settings | None = None) -> Engine:
+def get_engine() -> Engine:
     global _engine, _SessionLocal
     if _engine is None:
-        settings = settings or Settings()
-        _engine = create_engine(settings.require_database_url(), pool_pre_ping=True)
+        from app.config.settings import Settings
+
+        _engine = create_engine(Settings().require_database_url(), pool_pre_ping=True)
         _SessionLocal = sessionmaker(bind=_engine)
     return _engine
 
 
 @contextmanager
-def session_scope(settings: Settings | None = None) -> Iterator[Session]:
-    get_engine(settings)
+def session_scope() -> Iterator[Session]:
+    get_engine()
     assert _SessionLocal is not None
     session = _SessionLocal()
     try:

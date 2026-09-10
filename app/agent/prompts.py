@@ -1,10 +1,18 @@
-"""Shared helpers for building LLM prompts from database rows."""
+"""Shared helpers for building LLM prompts from the profile and database rows."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from app.database.models import ItemSummaryRow
+from app.config.settings import Profile
+from app.db.models import ItemSummaryRow
+
+
+def reader_header(profile: Profile, *extra_lines: str) -> str:
+    """First lines of every agent prompt: who the digest is for."""
+    lines = [f"Reader: {profile.name}, {profile.title} ({profile.expertise_level})."]
+    lines.extend(line for line in extra_lines if line)
+    return "\n".join(lines)
 
 
 def pack_summary(row: ItemSummaryRow) -> dict[str, Any]:

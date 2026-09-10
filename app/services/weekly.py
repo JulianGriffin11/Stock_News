@@ -7,14 +7,14 @@ import time
 
 from sqlalchemy import func, select
 
-from app.agent.steps import run_rank, run_summarize, run_write_email
+from app.agent import run_rank, run_summarize, run_write_email
 from app.config.context import PipelineContext, make_context
 from app.config.logging import run_timed_step
-from app.database.emails import get_email_for_run
-from app.database.models import DigestRunRow, EmailRow, ItemSummaryRow
-from app.database.session import session_scope
-from app.ingest import run_ingest
-from app.services.send_email import run_send
+from app.db.models import DigestRunRow, EmailRow, ItemSummaryRow
+from app.db.queries import get_email_for_run
+from app.db.session import session_scope
+from app.services.ingest import run_ingest
+from app.services.send import run_send
 
 log = logging.getLogger("digest")
 
@@ -23,14 +23,13 @@ def already_sent(ctx: PipelineContext) -> bool:
     run = ctx.resolve_digest_run()
     if run is None:
         return False
-    email = get_email_for_run(run.id, ctx.settings)
+    email = get_email_for_run(run.id)
     return email is not None and email.status == "sent"
 
 
 def _log_db_summary(ctx: PipelineContext) -> None:
     week = ctx.week_start
-    settings = ctx.settings
-    with session_scope(settings) as session:
+    with session_scope() as session:
         summaries = session.scalar(select(func.count()).select_from(ItemSummaryRow)) or 0
         runs = session.scalar(select(func.count()).select_from(DigestRunRow)) or 0
         emails = session.scalar(select(func.count()).select_from(EmailRow)) or 0

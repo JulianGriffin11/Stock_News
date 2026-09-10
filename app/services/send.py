@@ -9,9 +9,13 @@ import resend
 from app.config.context import PipelineContext, make_context
 from app.config.logging import step_logger
 from app.config.settings import Settings
-from app.database.digest_runs import set_run_status
-from app.database.emails import get_email_for_run, mark_email_failed, mark_email_sent
-from app.database.models import EmailRow
+from app.db.models import EmailRow
+from app.db.queries import (
+    get_email_for_run,
+    mark_email_failed,
+    mark_email_sent,
+    set_run_status,
+)
 from app.email.render import footer_attachments
 
 log = logging.getLogger("digest.send")
@@ -47,7 +51,7 @@ def run_send(
         step_log.warning("skipped no digest_run — run rank first")
         return 0
 
-    email = get_email_for_run(run.id, settings)
+    email = get_email_for_run(run.id)
     if email is None:
         step_log.warning("skipped no email stored — run write-email first")
         return 0
@@ -60,8 +64,8 @@ def run_send(
     try:
         resend_id = _deliver(email, settings)
     except Exception:
-        mark_email_failed(email.id, settings)
-        set_run_status(run.id, "failed", settings)
+        mark_email_failed(email.id)
+        set_run_status(run.id, "failed")
         log.exception(
             "week_start=%s step=send failed recipient=%s",
             ctx.week_start,
@@ -69,7 +73,7 @@ def run_send(
         )
         raise
 
-    mark_email_sent(email.id, resend_id, settings)
-    set_run_status(run.id, "sent", settings)
+    mark_email_sent(email.id, resend_id)
+    set_run_status(run.id, "sent")
     step_log.debug("done recipient=%s resend_id=%s", recipient, resend_id)
     return 1

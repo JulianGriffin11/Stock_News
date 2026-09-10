@@ -2,51 +2,25 @@
 
 A personal, once-a-week email of the most useful news and filings for a small named watchlist. You are the only user. Config lives in `app/profiles/`, not a signup product.
 
-**Build order is inverted on purpose:** prove the two data surfaces first. Do not stand up Supabase, OpenAI, or Resend until ingest is visibly working.
-
-## V1 cut
-
-**Keep**
-
-- RSS per ticker (Yahoo Finance). Volume is enough for 5–15 names. Google News search RSS was tried in the spike and dropped — it often returns an empty feed to a script.
-- SEC EDGAR (official `data.sec.gov` submissions, not a paid “SEC API”). Filter to **8-K, 10-Q, 10-K**. Skip amendments (`/A`). Form 4 is deferred for V1 (too many on mega-caps). This is the investor-specific signal RSS misses.
-- Three-agent LLM pipeline: summarize → rank → write email.
-- Supabase Postgres, OpenAI, Resend, GitHub Actions weekly cron.
-
-**Skip for V1**
-
-- Company IR scraping (fragile, per-site, anti-bot). Revisit later if a specific company has a clean IR RSS/Atom feed — many do, and that is a cheap add.
-- Form 4 insider filings (volume). Revisit later as officer-buys-only, header-only (no HTML download).
-- Price/quote APIs, multi-user auth, hosted always-on web API.
-
-RSS alone usually fills an email. SEC is what makes it *investor* rather than *news*. Both stay in V1; IR waits.
+Yahoo Finance RSS plus SEC EDGAR (8-K, 10-Q, 10-K) → Postgres → three OpenAI steps (summarize, rank, write) → Jinja2 Arcane email → Resend. GitHub Actions runs it on Sunday.
 
 ## Stack
 
-| Piece | Choice | Why |
-|---|---|---|
-| Language | Python 3.12 | Scrapers + agent pipeline |
-| Jobs | CLI (`digest`) | `python -m digest run-weekly` locally; GitHub Actions in prod |
-| Cron | GitHub Actions `schedule` | Free, secrets, good enough for one weekly run |
-| DB | Supabase Postgres | One project, tables + optional dashboard |
-| LLM | OpenAI | `gpt-4o-mini` for per-item summaries; a stronger model for rank + email |
-| Email | [Resend](https://resend.com) | Simple API, good HTML, free tier is plenty for 1 email/week |
-| Config | `app/profiles/` | `user.py` persona + `tickers.py` watchlist |
+| Piece | Choice |
+|---|---|
+| Language | Python 3.13 |
+| Jobs | CLI (`digest`) |
+| Cron | GitHub Actions (`0 12 * * 0`) |
+| DB | Supabase Postgres |
+| LLM | OpenAI (`gpt-4o-mini` for summarize + email; `gpt-4o` for rank) |
+| Email | [Resend](https://resend.com) |
+| Config | `app/profiles/user.py` + `app/profiles/tickers.py` |
 
-GitHub Actions runs the pipeline as a one-off script (checkout → install → `python -m digest run-weekly`). No web server.
+No web server. Secrets live in `.env` locally and in GitHub Actions secrets in prod.
 
-Used when each phase needs it:
+## Add a ticker
 
-- Phase 1–2: Python 3.12, httpx, feedparser
-- Phase 3: Supabase Postgres + Alembic
-- Phase 4: OpenAI
-- Phase 5: Resend, GitHub Actions
-- Phase 6: Refactor (after the pipeline works end-to-end)
-- Always: `app/profiles/` as the user profile (no user table)
-
-## Watchlist config
-
-Persona is `app/profiles/user.py`. Watchlist is `app/profiles/tickers.py` — append a dict to add a name:
+Append a dict in `app/profiles/tickers.py`:
 
 ```python
 TICKERS = [
@@ -56,324 +30,121 @@ TICKERS = [
 ]
 ```
 
-CIK lookup at ingest time from SEC’s public `company_tickers.json` (cached), so CIKs do not have to be hand-entered.
+Persona, ranking criteria, email tone, and recipient are in `app/profiles/user.py`. CIK lookup happens at ingest from SEC’s `company_tickers.json` (cached under `data/`).
 
-## Data model (Supabase)
+## Env vars
 
-Four tables, matching the agent stages. No user table — the profile lives in `app/profiles/`.
+Copy `.env.example` to `.env`. Never commit `.env`.
 
-- **`raw_items`** — ingested payload
-  - `id`, `source` (`rss` | `sec`), `ticker`, `title`, `url`, `published_at`
-  - `raw_text` (RSS description/snippet, or SEC filing excerpt)
-  - `external_id` (URL or EDGAR accession) — unique, for dedupe
-  - `fetched_at`
-- **`item_summaries`** — agent 1 output
-  - `id`, `raw_item_id`, `summary`, `why_it_matters`, `item_type` (earnings / 8-K / product / other)
-  - `model`, `created_at`
-- **`digest_runs`** — one row per weekly job
-  - `id`, `week_start`, `status`, `ranked_item_ids` (json), `rank_rationale`
-- **`emails`** — agent 3 output + send log
-  - `id`, `digest_run_id`, `subject`, `html_body`, `text_body`, `sent_at`, `resend_id`, `status`
+| Name | Used for |
+|---|---|
+| `DATABASE_URL` | Direct Postgres URI (port `5432`, not the `6543` pooler) |
+| `OPENAI_API_KEY` | Summarize / rank / write-email |
+| `RESEND_API_KEY` | Send |
+| `RESEND_FROM` | Verified From address |
+| `SEC_USER_AGENT` | Name + email; EDGAR 403s without it |
+
+Optional model overrides: `OPENAI_SUMMARIZE_MODEL`, `OPENAI_RANK_MODEL`, `OPENAI_EMAIL_MODEL`.
+
+GitHub Actions injects the same names as secrets. It does not use a `.env` file.
+
+## How to run
+
+```bash
+uv sync
+uv run alembic upgrade head
+
+# one step at a time
+uv run python -m digest ingest
+uv run python -m digest summarize
+uv run python -m digest rank
+uv run python -m digest write-email
+uv run python -m digest send
+
+# full pipeline (what cron runs)
+uv run python -m digest run-weekly
+uv run python -m digest run-weekly --force
+```
+
+`-v` turns on DEBUG (per-item progress, DB totals). `--force` replaces this week’s rank / email / send.
+
+Idempotency: one digest per Monday UTC `week_start`. If this week already sent, `run-weekly` skips unless you pass `--force`.
+
+After `write-email`, open `data/email-preview.html` in a browser to check layout without sending.
+
+Helper checks (no pytest required for these):
+
+```bash
+uv run python -m unittest tests.test_helpers
+uv run python playground/test_settings.py
+uv run python playground/test_yahoo_news.py
+uv run python playground/test_sec_filings.py
+uv run python playground/test_raw_items_db.py
+uv run python playground/test_agents_db.py
+```
 
 ## Pipeline
 
 ```mermaid
 flowchart LR
-  rss[RSS feeds] --> ingest[Ingest]
+  rss[Yahoo RSS] --> ingest[Ingest]
   sec[SEC EDGAR] --> ingest
   ingest --> raw[raw_items]
-  raw --> a1[Agent 1 Summarize]
+  raw --> a1[Summarize]
   a1 --> sums[item_summaries]
-  sums --> a2[Agent 2 Rank]
+  sums --> a2[Rank]
   a2 --> run[digest_runs]
-  run --> a3[Agent 3 Write email]
+  run --> a3[Write email]
   a3 --> mail[emails]
   mail --> resend[Resend]
 ```
 
-1. **Ingest** — For each ticker, pull Yahoo Finance RSS (feedparser) and SEC recent filings. Store text we can legally/easily get: RSS title + summary + link (no full-article scrape), SEC 8-K/10-Q header + first relevant section excerpt (capped, e.g. 8–12k chars). Dedupe on `external_id`. Window: last 7 days.
-2. **Agent 1 (summarize)** — Loop unsummarized `raw_items`. Each call returns short JSON: summary, why it matters to an investor, type. Write `item_summaries`. Cheap model; skip items with empty text.
-3. **Agent 2 (rank)** — One call with this week’s summaries + `ranking_criteria`. Returns top 5–10 ids plus a one-line reason each. Persist on `digest_runs`. If fewer than 5 items exist, send what we have rather than padding.
-4. **Agent 3 (email)** — One call: ranked items + tone → subject + 1–3 overview paragraphs. A Jinja2 template (Arcane layout) turns those plus stored summaries into HTML + plaintext. Store, then Resend `emails.send`. Fail the job if send fails.
+1. **Ingest** — Yahoo Finance RSS (title + snippet + link) and SEC 8-K / 10-Q / 10-K excerpts (capped). Dedupe on `external_id`. Window: last 7 days.
+2. **Summarize** — one cheap-model call per new item. Skip empty text.
+3. **Rank** — one call over this week’s summaries. Top 5–10 ids. If fewer than 5 exist, keep what we have.
+4. **Write email** — subject + 1–2 overview paragraphs from the model. Python renders Arcane HTML + plaintext from stored summaries.
+5. **Send** — Resend. Fail the job if send fails.
 
-Idempotency: if a digest already exists for this `week_start`, skip (or `--force` locally).
+`digest/` is the command menu. `app/services/` is ingest, send, and the weekly conductor. `app/agent/` is the three OpenAI steps. `app/config/` loads `.env` and the run context. `.env` stays at the repo root.
 
-## How SEC filings get summarized
+## Data model
 
-Filings are not a pile of numbers. Most of what an investor cares about is prose plus a few tables, and the form type decides how much we send to the model.
+Four tables, no user table:
 
-| Form | What it really is | Typical size | What an investor wants |
-|---|---|---|---|
-| **8-K** | Something material happened — CEO left, acquisition, earnings release, guidance, lawsuit | Often short; Exhibit 99.1 is frequently a press release | The event, in plain English |
-| **Form 4** | Insider bought/sold shares | Tiny, tabular | Who, buy vs sell, size, role. **Skipped in V1** (volume); header-only if re-enabled |
-| **10-Q** | Quarterly report: financials **and** MD&A (management’s written story of the quarter) | Long | Revenue/margin/EPS vs last year, guidance, one big risk or miss |
-| **10-K** | Annual version of the above, plus business description and risk factors | Very long | Same idea, plus what changed in the business this year |
+- **`raw_items`** — `source` (`rss` \| `sec`), ticker, title, url, published_at, raw_text, unique `external_id`
+- **`item_summaries`** — summary, why_it_matters, item_type, key_numbers
+- **`digest_runs`** — one row per `week_start`; ranked ids + rationale
+- **`emails`** — subject, html, text, send log (`unsent` / `sent` / `failed`)
 
-Agent 1 is not interpreting tone. It translates a disclosure into: what happened, the key numbers, and why it might matter. It only copies figures that are **in the text we send** — it should not invent a percentage from a filing we never provided.
+## Sources that actually work
 
-**We do not send the whole 10-K or 10-Q to the LLM.** That is expensive, easy to truncate, and full of boilerplate.
-
-**Always summarize (small, high signal)**
-
-- 8-K cover page + item list (Item 2.02 earnings, Item 5.02 officer departure, etc.)
-- Exhibit 99.1 earnings release when present
-- Form 4 is not ingested in V1. If re-enabled, use submissions JSON only (form, date, company) — do not download the HTML table
-
-**Do not dump the whole document for V1**
-
-- Full 10-Q / 10-K HTML. Treat these as a headline item: title like `AAPL 10-Q filed 2026-08-01`, EDGAR link, optional first chunk of Item 2 MD&A only (capped, e.g. 8–12k characters). Prompt: extract 3–5 investor facts; if the excerpt is incomplete, say so and do not invent numbers.
-
-RSS stays as title + snippet + link. No full-article scrape.
-
-Same JSON shape for news and filings, with `item_type` so the email can label each item:
-
-```json
-{
-  "item_type": "earnings",
-  "summary": "Amazon 8-K: Q2 net sales $168B, up 11% YoY. AWS up 19%. Operating income $19.2B.",
-  "why_it_matters": "Growth is still AWS-led; retail margins improved vs last year. No new FY guidance in this excerpt.",
-  "key_numbers": ["sales +11%", "AWS +19%"]
-}
-```
-
-## Shape of the weekly email
-
-Mixed sources, one digest. Agent 3 writes **subject + overview only**. Python renders a table-based Arcane HTML template (wine palette, Inter + Instrument Serif). Ranked 5–10 items stay in **rank order**, not grouped by type.
-
-**Subject:** `Weekly digest: NVDA, AAPL, AMZN — earnings, one 8-K, two headlines`
-
-**Body**
-
-1. **Letter** — greeting + Agent 3’s 1–3 overview paragraphs + sign-off
-2. **Hero image** — one full-width editorial photo
-3. **This week** — numbered listings in rank order. Title is `TICKER · 8-K` (or News / earnings / 10-Q). Body is the stored summary + why it matters. Link is the source URL
-4. **Quote** — fixed Howard Marks line
-5. **Footer** — blurb, LinkedIn + GitHub icons, placeholder address
-
-After `write-email`, open `data/email-preview.html` in a browser to check the layout without sending.
-
----
-
-## Phased build
-
-### Phase 1 — Scraper spike (do this first)
-
-Goal: run one command and see real headlines and real filings. No database, no API keys except a SEC User-Agent string.
-
-Minimal throwaway-quality code is fine here. We can reshape it in Phase 2.
-
-#### Step 1.1 — Tiny Python runner
-
-- `requirements.txt`: `httpx`, `feedparser`, `python-dotenv`
-- `app/scrapers/yahoo_scraper.py` and `app/scrapers/sec_scraper.py`
-- Hardcode 2–3 tickers for the spike: `NVDA`, `AAPL`, `MSFT`
-- Window: last **7 days**
-- Output: pretty-print to the terminal **and** write `data/yahoo_news.json` + `data/sec_filings.json`
-- `.gitignore` those output files
-
-#### Step 1.2 — RSS scraper
-
-For each ticker:
-
-- Yahoo Finance: `https://feeds.finance.yahoo.com/rss/2.0/headline?s={TICKER}&region=US&lang=en-US`
-
-Parse with `feedparser`. Keep `title`, `link`, `published`, `summary`. Filter to the 7-day window. Tag `source=yahoo` and `ticker`.
-
-**Pass criteria:** at least a handful of items across the three tickers. If Yahoo’s RSS is dead/empty, try CNBC/Reuters general feeds filtered by ticker mention, or Yahoo via a different URL — document what actually worked.
-
-#### Step 1.3 — EDGAR scraper
-
-SEC requires a descriptive `User-Agent` (name + email). Put it in `.env` as `SEC_USER_AGENT`.
-
-1. Resolve ticker → CIK from `https://www.sec.gov/files/company_tickers.json` (cache the JSON locally).
-2. Pull recent filings from `https://data.sec.gov/submissions/CIK{cik10}.json`.
-3. Keep forms **8-K, 10-Q, 10-K**. Skip amendments (`8-K/A`, `10-Q/A`, …). Filter to last 7 days.
-4. For each hit, store accession, form, filing date, company, and a document URL. Optionally fetch a **capped excerpt** (first ~8–12k chars) of the primary document — if that fetch is flaky, skip excerpt in the spike and keep metadata only.
-
-**Pass criteria:** at least one real filing in the window (or, if a quiet week, clearly show the most recent filings *outside* the window so we know the API works). Handle 429/403 (User-Agent missing is the usual failure).
-
-#### Step 1.4 — Gate (stop here until this is true)
-
-Phase 1 is done only when:
-
-- `uv run python playground/test_yahoo_news.py` prints real headlines with links
-- `uv run python playground/test_sec_filings.py` prints real filings with accession numbers
-- Both JSON dumps exist and look inspectable
-- This README notes **which URLs actually worked** (feeds change)
-
-If either source is a dead end, pivot the source *before* building the rest of the app.
-
-**Verified 2026-09-03** — both surfaces returned real items. Run from the playground: `uv run python playground/test_yahoo_news.py` and `uv run python playground/test_sec_filings.py`.
+Verified 2026-09-03:
 
 | Source | URL | Result |
 |---|---|---|
-| Yahoo Finance RSS | `https://feeds.finance.yahoo.com/rss/2.0/headline?s={TICKER}&region=US&lang=en-US` | Live. Use a descriptive User-Agent (`StockNewsDigest/0.1 …`); a fake browser UA can 429. |
-| Google News RSS | `https://news.google.com/rss/search?q={COMPANY}+stock&hl=en-US&gl=US&ceid=US:en` | Dropped. Often returns HTTP 200 with an empty channel to a script; Yahoo already supplies enough headlines. |
+| Yahoo Finance RSS | `https://feeds.finance.yahoo.com/rss/2.0/headline?s={TICKER}&region=US&lang=en-US` | Live. Use a descriptive User-Agent (`StockNewsDigest/0.1 …`). |
+| Google News RSS | `https://news.google.com/rss/search?q={COMPANY}+stock&hl=en-US&gl=US&ceid=US:en` | Dropped. Often empty to a script. |
 | SEC ticker → CIK | `https://www.sec.gov/files/company_tickers.json` | Live; cached at `data/company_tickers.json`. |
 | SEC submissions | `https://data.sec.gov/submissions/CIK{cik10}.json` | Live with `SEC_USER_AGENT` set to name + email. |
 
-Did not need Feedspot/RSS.app or CNBC/Reuters fallbacks.
+RSS stays title + snippet + link. Filings send a capped excerpt (about 8–12k characters), not the whole 10-K.
 
-### Phase 2 — Turn the spike into a real ingest module
-
-Still no Supabase/OpenAI/Resend.
-
-1. Package layout: `app/scrapers/yahoo_scraper.py`, `app/scrapers/sec_scraper.py`
-2. Profile in `app/profiles/` with the real (or placeholder) ticker list — stop hardcoding
-3. Shared item shape: `source`, `ticker`, `title`, `url`, `published_at`, `raw_text`, `external_id`
-4. Dedupe in memory on `external_id` (URL or accession)
-5. CLI: `python -m digest ingest` writes `data/raw_items.json`
-6. Fold the Phase 1 fetchers into this ingest CLI once the module matches that output
-
-**Verified 2026-09-03** — ingest reads `app/profiles/tickers.py` + `app/profiles/user.py`, fetches both sources, dedupes, and writes `data/raw_items.json`.
-
-```bash
-uv run python -m digest ingest
-```
-
-Tickers are no longer hardcoded. Scrapers take a ticker list + cutoff; they do not load the profile files. Playground scripts still exercise one scraper at a time.
-
-### Phase 3 — Persist to Supabase
-
-Only after ingest is trusted. Schema starts with **`raw_items` only** (`external_id` unique). Later tables wait for Phase 4/5.
-
-1. Create a Supabase project. In **Project Settings → Database**, copy the Postgres URI into `.env` as `DATABASE_URL`. Prefer the **direct** connection (port `5432`), not the transaction pooler (`6543`) — Alembic needs a real session. URL-encode any special characters in the password.
-2. Apply the migration, then ingest twice. The second run must not create duplicate rows.
-
-```bash
-# confirm the URL is loaded (prints nothing if set)
-uv run python -c "from app.config.settings import Settings; Settings().require_database_url(); print('DATABASE_URL ok')"
-
-# create raw_items
-uv run alembic upgrade head
-
-# optional: confirm revision
-uv run alembic current
-
-# fetch + upsert
-uv run python -m digest ingest
-
-# same items again — should print N inserted, 0 updated the first time,
-# then 0 inserted, N updated the second time (no new rows)
-uv run python -m digest ingest
-```
-
-Check the table in Supabase **Table Editor → raw_items**, or:
-
-```bash
-uv run python playground/test_raw_items_db.py
-```
-
-### Phase 4 — Three agents
-
-Tables: `item_summaries`, `digest_runs`, and `emails` (stored unsent; Resend waits for Phase 5).
-
-1. **Summarize** — loop new `raw_items` → short JSON (summary, why it matters, type). `gpt-4o-mini`
-2. **Rank** — one call over this week’s summaries + `ranking_criteria` in `user.py` → top 5–10 ids + reasons. `gpt-4o`. If fewer than 5 items, keep what we have
-3. **Write email** — ranked items + `email_tone` → subject + overview. Jinja2 renders HTML + plaintext. Store on `emails` (unsent) and write `data/email-preview.html`. Idempotent per `week_start` (Monday UTC); `--force` replaces
-
-```bash
-# create item_summaries + digest_runs + emails
-uv run alembic upgrade head
-uv run alembic current
-
-# confirm the new tables exist
-uv run python playground/test_agents_db.py
-
-# agents (needs OPENAI_API_KEY). Re-run summarize anytime; rank / write-email skip if this week exists
-uv run python -m digest summarize
-uv run python -m digest rank
-uv run python -m digest write-email
-```
-
-### Phase 5 — Send and schedule
-
-1. Resend: send the stored email; save `resend_id` / `sent_at`. Fail the job if send fails.
-2. Orchestrator: `python -m digest run-weekly` (ingest → summarize → rank → write → send). Idempotent per `week_start`; `--force` locally
-3. GitHub Actions: Sunday 12:00 UTC + `workflow_dispatch`
-
-Needs `RESEND_API_KEY`, `RESEND_FROM` (verified domain), and `recipient` in `app/profiles/user.py`.
-
-```bash
-# send this week's stored email only
-uv run python -m digest send
-
-# full pipeline, including send. Skips if this week already went out.
-uv run python -m digest run-weekly
-uv run python -m digest run-weekly --force
-```
-
-Repo secrets for `.github/workflows/weekly-digest.yml`: `DATABASE_URL`, `OPENAI_API_KEY`, `RESEND_API_KEY`, `RESEND_FROM`, `SEC_USER_AGENT`.
-
-### Phase 6 — Refactor (after Phase 5 works)
-
-Cleanup once `run-weekly` is live. Not blocking V1 — each step still works standalone via CLI and Postgres today.
-
-1. ~~**`PipelineContext`**~~ — done in `app/config/context.py`; `run-weekly` creates one (`settings`, `week_start`, optional `digest_run`) and passes it ingest → summarize → rank → write → send. Standalone CLI commands still load `digest_run` from Postgres when it is not already on the context.
-2. ~~**Shared `pack_summary()`**~~ — done in `app/agent/prompts.py`; used by `steps/rank.py` and `steps/write_email.py`.
-3. **Rank tuning** — as the watchlist grows (10–20 tickers), bump ranked cap to 8–12 and add diversity rules (max picks per ticker; don’t let one earnings week dominate).
-4. **Model roles** — keep cheap model for summarize volume; strongest model on rank; email can stay cheap (1 call/week).
-5. ~~**Logging**~~ — done in `app/config/logging.py`; one INFO line per step (duration + brief result), httpx/OpenAI HTTP noise suppressed; `-v` for step details and per-item progress.
-
-### Phase 7 — Docs
-
-Setup, env vars, how to add tickers, how to run Phase 1 / ingest / full weekly locally.
-
-## Repo layout (target)
+## Repo layout
 
 ```
-app/
-  config/       # load Python profile, window, output helpers
-  scrapers/     # RSS + SEC — collect fresh content
-  ingest.py     # fetch, shared item shape, in-memory dedupe
-  agent/        # LLM client + schemas; steps/ has summarize, rank, write email
-  email/        # Arcane Jinja2 templates + render_digest()
-  database/     # Postgres helpers (read/write Supabase)
-  services/     # text cleanup + send email via Resend
-  profiles/     # user interests used to rank/personalize
-digest/         # CLI: python -m digest run-weekly
-alembic/
-  versions/     # Alembic migrations (start with raw_items)
-data/           # local JSON dumps from Phase 1–2
-.github/workflows/  # weekly cron
+app/config/      # settings, run context, logging
+app/services/    # ingest, send, weekly
+app/scrapers/    # Yahoo RSS + SEC EDGAR
+app/agent/       # client, prompts, schemas; steps/ = summarize, rank, write_email
+app/db/          # SQLAlchemy models + queries
+app/email/       # Arcane templates
+app/profiles/    # user.py + tickers.py
+digest/          # CLI
+alembic/         # migrations
 ```
-
-- `app/config/settings.py` — load Python profile, 7-day window, JSON dump
-- `app/config/context.py` — `PipelineContext` for one pipeline run
-- `app/scrapers/yahoo_scraper.py` / `app/scrapers/sec_scraper.py` / `app/scrapers/sec_toolbox.py`
-- `app/ingest.py` — fetch both sources, shared item shape, in-memory dedupe
-- `digest/` — CLI (`python -m digest run-weekly`)
-- `app/agent/` — `client.py`, `schemas.py`; `steps/` — summarize, rank, write email
-- `app/email/` — Arcane theme, Jinja2 templates, `render_digest()`
-- `app/database/` — connection + upsert helpers
-- `app/services/` — cleanup + Resend send + weekly orchestrator
-- `app/profiles/user.py` — persona, preferences, ranking criteria, recipient
-- `app/profiles/tickers.py` — watchlist (append to extend)
-- `alembic/versions/` — schema migrations against Supabase Postgres
-- `.github/workflows/weekly-digest.yml` — cron (e.g. Sunday 12:00 UTC) + `workflow_dispatch`
-
-## Secrets
-
-GitHub Actions + local `.env`, never committed:
-
-- `OPENAI_API_KEY`
-- `RESEND_API_KEY`
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `DATABASE_URL` — direct Postgres URI (port 5432) for Alembic + ingest upserts
-- `RESEND_FROM`
-- `SEC_USER_AGENT` — descriptive name + email; EDGAR will 403 without it
-
-## Still needed before / during impl
-
-- Real ticker list (spike uses NVDA / AAPL / MSFT)
-- Resend-verified `RESEND_FROM` domain (required before `send` works)
-
-Until then, edit `app/profiles/user.py` and append names in `app/profiles/tickers.py`.
 
 ## Later (not V1)
 
 - IR RSS/Atom only where a company publishes one
 - Price context (1-week move next to each item)
 - Multi-user / hosted API
-- A tiny web archive of past digests in Supabase

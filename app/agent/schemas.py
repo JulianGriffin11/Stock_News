@@ -17,8 +17,23 @@ ItemType = Literal[
     "other",
 ]
 
+TYPE_LABELS = {
+    "earnings": "earnings",
+    "8-k": "8-K",
+    "form-4": "Form 4",
+    "10-q": "10-Q",
+    "10-k": "10-K",
+    "product": "product",
+    "news": "News",
+    "other": "other",
+}
 
-"Agent 1 - Summarize"
+
+def type_label(item_type: str) -> str:
+    return TYPE_LABELS.get(item_type, item_type)
+
+
+# Agent 1 — Summarize
 
 
 class ItemSummaryOut(BaseModel):
@@ -28,7 +43,7 @@ class ItemSummaryOut(BaseModel):
     key_numbers: list[str] = Field(default_factory=list)
 
 
-"Agent 2 - Rank"
+# Agent 2 — Rank
 
 
 class RankedPick(BaseModel):
@@ -41,7 +56,7 @@ class RankOut(BaseModel):
     rationale: str = Field(min_length=1)
 
 
-"Agent 3 - Email"
+# Agent 3 — Email
 
 
 class EmailOut(BaseModel):
