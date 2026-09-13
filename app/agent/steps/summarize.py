@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+
+from openai import OpenAI
+
 from app.agent.client import openai_client, parse_response
 from app.agent.prompts import reader_header
 from app.agent.schemas import ItemSummaryOut
@@ -10,6 +15,9 @@ from app.config.logging import step_logger
 from app.config.settings import Settings
 from app.db.models import RawItemRow
 from app.db.queries import insert_summaries, list_unsummarized
+
+SUMMARIZE_WORKERS = 5
+HEARTBEAT_S = 30
 
 INSTRUCTIONS = """\
 You summarize one news item or SEC filing for a long-term fundamental investor.
@@ -50,26 +58,66 @@ def run_summarize(ctx: PipelineContext | None = None) -> int:
 
     client = openai_client(settings)
     pending: list[tuple] = []
-    for item in items:
-        out = parse_response(
-            model=settings.summarize_model,
-            instructions=INSTRUCTIONS,
-            user_input=_user_input(item, settings),
-            schema=ItemSummaryOut,
-            client=client,
-        )
-        pending.append(
-            (
-                item.id,
-                out.summary,
-                out.why_it_matters,
-                out.item_type,
-                out.key_numbers,
-                settings.summarize_model,
+    workers = min(SUMMARIZE_WORKERS, candidates)
+    completed = 0
+    log.info("started candidates=%d workers=%d", candidates, workers)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_summarize_one, item, settings, client): item
+            for item in items
+        }
+        outstanding = set(futures)
+        last_beat = time.monotonic()
+        while outstanding:
+            finished, outstanding = wait(
+                outstanding,
+                timeout=HEARTBEAT_S,
+                return_when=FIRST_COMPLETED,
             )
-        )
-        log.debug("summarized ticker=%s id=%s", item.ticker, item.id)
+            now = time.monotonic()
+            if not finished:
+                log.info("progress %d/%d", completed, candidates)
+                last_beat = now
+                continue
+            for future in finished:
+                item = futures[future]
+                completed += 1
+                try:
+                    out = future.result()
+                except Exception:
+                    log.exception(
+                        "summarize failed ticker=%s id=%s",
+                        item.ticker,
+                        item.id,
+                    )
+                    continue
+                pending.append(
+                    (
+                        item.id,
+                        out.summary,
+                        out.why_it_matters,
+                        out.item_type,
+                        out.key_numbers,
+                        settings.summarize_model,
+                    )
+                )
+                log.debug("summarized ticker=%s id=%s", item.ticker, item.id)
+            if now - last_beat >= HEARTBEAT_S:
+                log.info("progress %d/%d", completed, candidates)
+                last_beat = now
 
     written = insert_summaries(pending)
     log.debug("done candidates=%d written=%d", candidates, written)
     return written
+
+
+def _summarize_one(
+    item: RawItemRow, settings: Settings, client: OpenAI
+) -> ItemSummaryOut:
+    return parse_response(
+        model=settings.summarize_model,
+        instructions=INSTRUCTIONS,
+        user_input=_user_input(item, settings),
+        schema=ItemSummaryOut,
+        client=client,
+    )

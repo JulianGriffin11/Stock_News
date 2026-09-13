@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, date, datetime
 
 from sqlalchemy import select
@@ -21,6 +22,27 @@ def _parse_published_at(value: str) -> datetime:
     return parsed
 
 
+def existing_external_ids(
+    ids: Sequence[str] | None = None,
+    *,
+    nonempty_text: bool = False,
+) -> set[str]:
+    """external_id values already in raw_items.
+
+    When ids is given, only those keys are checked. When nonempty_text is True,
+    rows with an empty raw_text are omitted so a failed fetch can retry.
+    """
+    if ids is not None and not ids:
+        return set()
+    with session_scope() as session:
+        stmt = select(RawItemRow.external_id)
+        if nonempty_text:
+            stmt = stmt.where(RawItemRow.raw_text != "")
+        if ids is not None:
+            stmt = stmt.where(RawItemRow.external_id.in_(list(ids)))
+        return set(session.scalars(stmt))
+
+
 def upsert_raw_items(items: list[RawItem]) -> tuple[int, int]:
     """Insert new rows; refresh existing ones matched on external_id.
 
@@ -31,13 +53,9 @@ def upsert_raw_items(items: list[RawItem]) -> tuple[int, int]:
 
     now = datetime.now(UTC)
     ids = [item["external_id"] for item in items]
+    existing = existing_external_ids(ids)
 
     with session_scope() as session:
-        existing = set(
-            session.scalars(
-                select(RawItemRow.external_id).where(RawItemRow.external_id.in_(ids))
-            )
-        )
         rows = [
             {
                 "source": item["source"],

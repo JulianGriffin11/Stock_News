@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Sequence
+from collections.abc import Collection, Iterator, Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -29,6 +29,7 @@ def fetch_sec(
     *,
     user_agent: str,
     cache_dir: Path,
+    skip_ids: Collection[str] | None = None,
 ) -> list[RawItem]:
     user_agent = user_agent.strip()
     if not user_agent:
@@ -48,7 +49,12 @@ def fetch_sec(
         for ticker in tickers:
             items.extend(
                 _filings_for(
-                    client, ticker.upper(), ticker_map, documents, cutoff
+                    client,
+                    ticker.upper(),
+                    ticker_map,
+                    documents,
+                    cutoff,
+                    skip_ids=skip_ids,
                 )
             )
             pause()
@@ -62,6 +68,7 @@ def _filings_for(
     ticker_map: dict[str, dict],
     documents: FilingDocuments,
     cutoff: date,
+    skip_ids: Collection[str] | None = None,
 ) -> list[RawItem]:
     info = ticker_map.get(ticker)
     if not info:
@@ -75,10 +82,15 @@ def _filings_for(
     company = payload.get("name") or info["title"]
     recent = payload.get("filings", {}).get("recent", {})
 
+    known = set(skip_ids) if skip_ids else set()
     items: list[RawItem] = []
+    skipped = 0
     for row in _recent_rows(recent):
         form, filing_date, accession, primary, sec_items, description = row
         if not _in_window(form, filing_date, cutoff):
+            continue
+        if accession in known:
+            skipped += 1
             continue
         parsed = date.fromisoformat(filing_date)
         url = archive_url(cik, accession, primary)
@@ -104,6 +116,8 @@ def _filings_for(
                 "external_id": accession,
             }
         )
+    if skipped:
+        log.debug("ticker=%s skipped_known=%d", ticker, skipped)
     return items
 
 

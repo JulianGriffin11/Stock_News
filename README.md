@@ -75,7 +75,6 @@ After `write-email`, open `data/email-preview.html` in a browser to check layout
 Helper checks (no pytest required for these):
 
 ```bash
-uv run python -m unittest tests.test_helpers
 uv run python playground/test_settings.py
 uv run python playground/test_yahoo_news.py
 uv run python playground/test_sec_filings.py
