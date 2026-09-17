@@ -27,6 +27,9 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_SUMMARIZE_MODEL: gpt-4o-mini
+          OPENAI_RANK_MODEL: gpt-4o-mini
+          OPENAI_EMAIL_MODEL: gpt-4o-mini
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.RESEND_FROM }}
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
