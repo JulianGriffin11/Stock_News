@@ -23,6 +23,9 @@ rationale: one short paragraph covering the set.
 
 Prefer material filings, earnings, guidance, cash-flow or thesis changes, M&A,
 capital allocation, and durable competitive shifts.
+Form 4 open-market buys by CEO/CFO/directors are material. Discretionary large
+sales can be. Take at most one or two Form 4s unless a buy is clearly important.
+Routine insider activity must not pad the top 5–10.
 Deprioritize recaps, rumor, and short-term price commentary.
 Do not invent items. Do not pad the list.
 """

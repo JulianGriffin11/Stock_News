@@ -2,7 +2,7 @@
 
 A personal, once-a-week email of the most useful news and filings for a small named watchlist. You are the only user. Config lives in `app/profiles/`, not a signup product.
 
-Yahoo Finance RSS plus SEC EDGAR (8-K, 10-Q, 10-K) → Postgres → three OpenAI steps (summarize, rank, write) → Jinja2 Arcane email → Resend. GitHub Actions runs it on Sunday.
+Yahoo Finance RSS plus SEC EDGAR (8-K, 10-Q, 10-K, and filtered Form 4s) → Postgres → three OpenAI steps (summarize, rank, write) → Jinja2 Arcane email → Resend. GitHub Actions runs it on Sunday.
 
 ## Stack
 
@@ -78,6 +78,7 @@ Helper checks (no pytest required for these):
 uv run python playground/test_settings.py
 uv run python playground/test_yahoo_news.py
 uv run python playground/test_sec_filings.py
+uv run python playground/test_form4.py
 uv run python playground/test_raw_items_db.py
 uv run python playground/test_agents_db.py
 ```
@@ -98,7 +99,7 @@ flowchart LR
   mail --> resend[Resend]
 ```
 
-1. **Ingest** — Yahoo Finance RSS (title + snippet + link) and SEC 8-K / 10-Q / 10-K excerpts (capped). Dedupe on `external_id`. Window: last 7 days.
+1. **Ingest** — Yahoo Finance RSS (title + snippet + link) and SEC 8-K / 10-Q / 10-K excerpts (capped), plus Form 4s after a keep/drop filter (open-market buys and discretionary officer/director sales; no RSU/tax/10b5-1). Dedupe on `external_id`. Window: last 7 days.
 2. **Summarize** — one cheap-model call per new item. Skip empty text.
 3. **Rank** — one call over this week’s summaries. Top 5–10 ids. If fewer than 5 exist, keep what we have.
 4. **Write email** — subject + 1–2 overview paragraphs from the model. Python renders Arcane HTML + plaintext from stored summaries.
@@ -125,15 +126,16 @@ Verified 2026-09-03:
 | Google News RSS | `https://news.google.com/rss/search?q={COMPANY}+stock&hl=en-US&gl=US&ceid=US:en` | Dropped. Often empty to a script. |
 | SEC ticker → CIK | `https://www.sec.gov/files/company_tickers.json` | Live; cached at `data/company_tickers.json`. |
 | SEC submissions | `https://data.sec.gov/submissions/CIK{cik10}.json` | Live with `SEC_USER_AGENT` set to name + email. |
+| SEC Form 4 Atom | `browse-edgar?type=4&owner=only&output=atom` | Live. Only officer/director open-market buys and discretionary sales (not RSU, tax withholding, or 10b5-1) enter `raw_items`, max 2 per ticker. |
 
-RSS stays title + snippet + link. Filings send a capped excerpt (about 8–12k characters), not the whole 10-K.
+RSS stays title + snippet + link. Filings send a capped excerpt (about 8–12k characters), not the whole 10-K. Form 4s store a short parsed buy/sell line, not the XML.
 
 ## Repo layout
 
 ```
 app/config/      # settings, run context, logging
 app/services/    # ingest, send, weekly
-app/scrapers/    # Yahoo RSS + SEC EDGAR
+app/scrapers/    # yahoo, rss_filter, edgar, sec, form4, schemas
 app/agent/       # client, prompts, schemas; steps/ = summarize, rank, write_email
 app/db/          # SQLAlchemy models + queries
 app/email/       # Arcane templates

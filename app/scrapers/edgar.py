@@ -1,28 +1,22 @@
-"""SEC helpers used by the filings scraper.
-
-CikIndex         ticker → CIK (cached company_tickers.json)
-FilingDocuments  download a filing and build raw_text
-"""
+"""SEC plumbing: ticker → CIK, HTTP downloads, HTML excerpts, and accession file lists."""
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
-from re import sub
 
 import httpx
 from bs4 import BeautifulSoup
 
 COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
-SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik10}.json"
-KEEP_FORMS = {"8-K", "10-Q", "10-K"}
 EXCERPT_CHARS = 12_000
 EXHIBIT_99_MARKERS = ("ex99", "exhibit99", "ex-99", "exhibit-99")
 REQUEST_PAUSE = 0.2
 
-log = logging.getLogger("digest.scrapers.sec")
+log = logging.getLogger("digest.scrapers.edgar")
 
 
 def archive_url(cik: int, accession: str, filename: str = "") -> str:
@@ -32,10 +26,6 @@ def archive_url(cik: int, accession: str, filename: str = "") -> str:
     if not filename:
         return folder
     return f"{folder}/{filename}"
-
-
-def form_kind(form: str) -> str:
-    return form.split("/")[0]
 
 
 def pause() -> None:
@@ -90,10 +80,8 @@ class FilingDocuments:
         accession: str,
     ) -> str:
         header = self._header(company, form, filing_date, sec_items, description)
-        if form_kind(form) == "4":
-            return header
         body = self.excerpt(primary_url)
-        if form_kind(form) == "8-K":
+        if form.split("/")[0] == "8-K":
             exhibit = self._exhibit_99(cik, accession, primary_url)
             if exhibit:
                 body = f"{body}\n\nExhibit 99.1:\n{exhibit}".strip()
@@ -102,10 +90,41 @@ class FilingDocuments:
         return f"{header}\n\n{body}"[:EXCERPT_CHARS]
 
     def excerpt(self, url: str) -> str:
-        html = self._get(url)
+        html = self.get(url)
         if html is None:
             return ""
         return self._plain_text(html)[:EXCERPT_CHARS]
+
+    def directory_names(self, cik: int, accession: str) -> list[str]:
+        payload = self.get_json(f"{archive_url(cik, accession)}/index.json")
+        if payload is None:
+            return []
+        entries = payload.get("directory", {}).get("item") or []
+        if isinstance(entries, dict):
+            entries = [entries]
+        return [str(entry.get("name") or "") for entry in entries if entry.get("name")]
+
+    def get(self, url: str) -> str | None:
+        try:
+            response = self.client.get(url)
+            response.raise_for_status()
+            return response.text
+        except httpx.HTTPError as error:
+            log.warning("get %s failed: %s", url, error)
+            return None
+        finally:
+            pause()
+
+    def get_json(self, url: str) -> dict | None:
+        try:
+            response = self.client.get(url)
+            response.raise_for_status()
+            return response.json()
+        except (httpx.HTTPError, json.JSONDecodeError, ValueError) as error:
+            log.warning("get %s failed: %s", url, error)
+            return None
+        finally:
+            pause()
 
     def _header(
         self,
@@ -129,44 +148,14 @@ class FilingDocuments:
         return self.excerpt(url)
 
     def _exhibit_99_url(self, cik: int, accession: str) -> str | None:
-        index_url = f"{archive_url(cik, accession)}/index.json"
-        payload = self._get_json(index_url)
-        if payload is None:
-            return None
-        entries = payload.get("directory", {}).get("item") or []
-        if isinstance(entries, dict):
-            entries = [entries]
-        for entry in entries:
-            name = str(entry.get("name") or "")
+        for name in self.directory_names(cik, accession):
             lowered = name.lower().replace("_", "-")
             if any(marker in lowered for marker in EXHIBIT_99_MARKERS):
                 return archive_url(cik, accession, name)
         return None
 
-    def _get(self, url: str) -> str | None:
-        try:
-            response = self.client.get(url)
-            response.raise_for_status()
-            return response.text
-        except httpx.HTTPError as error:
-            log.warning("get %s failed: %s", url, error)
-            return None
-        finally:
-            pause()
-
-    def _get_json(self, url: str) -> dict | None:
-        try:
-            response = self.client.get(url)
-            response.raise_for_status()
-            return response.json()
-        except (httpx.HTTPError, json.JSONDecodeError, ValueError) as error:
-            log.warning("get %s failed: %s", url, error)
-            return None
-        finally:
-            pause()
-
     def _plain_text(self, html: str) -> str:
         soup = BeautifulSoup(html, "html.parser")
         for tag in soup(["script", "style"]):
             tag.decompose()
-        return sub(r"\s+", " ", soup.get_text(" ")).strip()
+        return re.sub(r"\s+", " ", soup.get_text(" ")).strip()

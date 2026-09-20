@@ -1,4 +1,4 @@
-"""Shared scrape output shape."""
+"""Shared scrape output shape: ticker, title, url, text, and external_id."""
 
 from __future__ import annotations
 

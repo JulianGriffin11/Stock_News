@@ -29,6 +29,9 @@ Return JSON only, matching the schema.
 - key_numbers: short strings copied from the text. Empty list if none.
 
 If the excerpt is incomplete (typical for 10-Q / 10-K), say so and do not invent numbers.
+For a Form 4, copy the owner, role, transaction code, shares, and price. Say whether
+it is a discretionary open-market buy or sale. Do not treat RSU, tax-withholding, or
+planned-sale language as thesis-changing.
 Do not interpret tone. Do not pad. Skip market-sentiment language.
 """
 

@@ -1,4 +1,4 @@
-"""Yahoo Finance news: RSS headlines for the watchlist."""
+"""Yahoo only: pull RSS headlines for each watchlist ticker."""
 
 from __future__ import annotations
 

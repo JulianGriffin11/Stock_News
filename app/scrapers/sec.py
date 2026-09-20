@@ -1,4 +1,4 @@
-"""SEC EDGAR filings scraper for 8-K, 10-Q, and 10-K."""
+"""SEC conductor: fetch 8-K / 10-Q / 10-K excerpts, then call Form 4. This is fetch_sec."""
 
 from __future__ import annotations
 
@@ -9,16 +9,12 @@ from pathlib import Path
 
 import httpx
 
-from app.scrapers.edgar import (
-    KEEP_FORMS,
-    SUBMISSIONS_URL,
-    CikIndex,
-    FilingDocuments,
-    archive_url,
-    form_kind,
-    pause,
-)
+from app.scrapers.edgar import CikIndex, FilingDocuments, archive_url, pause
+from app.scrapers.form4 import fetch_form4
 from app.scrapers.schemas import RawItem
+
+KEEP_FORMS = {"8-K", "10-Q", "10-K"}
+SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik10}.json"
 
 log = logging.getLogger("digest.scrapers.sec")
 
@@ -47,16 +43,28 @@ def fetch_sec(
         ticker_map = CikIndex(cache_dir).load(client)
         documents = FilingDocuments(client)
         for ticker in tickers:
+            symbol = ticker.upper()
             items.extend(
                 _filings_for(
                     client,
-                    ticker.upper(),
+                    symbol,
                     ticker_map,
                     documents,
                     cutoff,
                     skip_ids=skip_ids,
                 )
             )
+            info = ticker_map.get(symbol)
+            if info:
+                items.extend(
+                    fetch_form4(
+                        documents,
+                        symbol,
+                        info["cik"],
+                        cutoff,
+                        skip_ids=skip_ids,
+                    )
+                )
             pause()
     items.sort(key=lambda row: row["published_at"], reverse=True)
     return items
@@ -124,7 +132,7 @@ def _filings_for(
 def _in_window(form: str, filing_date: str, cutoff: date) -> bool:
     if "/A" in form.upper():
         return False
-    if form_kind(form) not in KEEP_FORMS:
+    if form.split("/")[0] not in KEEP_FORMS:
         return False
     try:
         parsed = date.fromisoformat(filing_date)

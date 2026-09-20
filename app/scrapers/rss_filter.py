@@ -1,4 +1,4 @@
-"""Keep company-specific Yahoo headlines; drop off-ticker and price-action junk."""
+"""Yahoo only: drop off-ticker and price-action headlines; keep company-specific ones."""
 
 from __future__ import annotations
 
