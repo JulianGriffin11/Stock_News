@@ -21,14 +21,14 @@ from app.db.queries import (
 from app.email.render import DigestListing, render_digest
 
 INSTRUCTIONS = """\
-You write the subject line and a short overview for a weekly investor digest.
+You write the subject line and a short overview for an investor digest covering the last 4 days.
 
 Return JSON: subject, overview (1-2 paragraphs as an array of strings).
 
 Subject example:
-Weekly digest: NVDA, AAPL — earnings, one 8-K, two headlines
+Digest: NVDA, AAPL — earnings, one 8-K, two headlines
 
-overview: 1-2 short paragraphs covering this week's ranked set. Do not recap
+overview: 1-2 short paragraphs covering this period's ranked set. Do not recap
 every item. Do not write HTML.
 
 Tone: match the requested email_tone. No hype. No invented numbers.

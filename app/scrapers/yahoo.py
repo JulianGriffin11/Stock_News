@@ -17,7 +17,7 @@ from app.scrapers.schemas import RawItem
 YAHOO_FEED = (
     "https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US"
 )
-USER_AGENT = "StockNewsDigest/0.1 (personal weekly digest)"
+USER_AGENT = "StockNewsDigest/0.1 (personal digest)"
 
 log = logging.getLogger("digest.scrapers.yahoo")
 

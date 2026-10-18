@@ -35,7 +35,7 @@ MARKS_QUOTE = {
 }
 
 FOOTER = {
-    "blurb": "The week's paper, ranked. The hot takes can wait.",
+    "blurb": "Four days of paper, ranked. The hot takes can wait.",
     "address_lines": (
         "124 Mercantile Row, Studio 3",
         "Los Angeles, CA, 90013",

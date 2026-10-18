@@ -1,6 +1,6 @@
 # Stock News
 
-An automated investment research pipeline that collects financial news and SEC filings, processes them with PostgreSQL and AI, and emails a personalized weekly digest.
+An automated investment research pipeline that collects financial news and SEC filings, processes them with PostgreSQL and AI, and emails a personalized digest.
 
 ## Why I Built This 💡
 
@@ -22,7 +22,7 @@ I wanted to automate part of my own investment research. Instead of checking new
            Agent email
 ```
 
-Each week the pipeline pulls Yahoo Finance headlines and SEC filings (8-K, 10-Q, 10-K, and selected Form 4s) for a personal watchlist. New items are stored in Postgres, summarized, ranked against my investment criteria, and sent as one email. GitHub Actions runs this on Sunday.
+Every 4 days the pipeline pulls Yahoo Finance headlines and SEC filings (8-K, 10-Q, 10-K, and selected Form 4s) for a personal watchlist. New items are stored in Postgres, summarized, ranked against my investment criteria, and sent as one email. GitHub Actions runs this at 12:00 UTC on every 4th day of the month.
 
 ## Tech Stack 🛠️
 
@@ -35,7 +35,7 @@ Each week the pipeline pulls Yahoo Finance headlines and SEC filings (8-K, 10-Q,
 | OpenAI API           | Summarization, ranking, and email copy       |
 | Jinja2               | HTML email generation                        |
 | Resend               | Email delivery                               |
-| GitHub Actions       | Weekly scheduled runs                        |
+| GitHub Actions       | Scheduled runs every 4 days                  |
 
 
 
@@ -45,14 +45,14 @@ Each week the pipeline pulls Yahoo Finance headlines and SEC filings (8-K, 10-Q,
 Python and SQL handle structured data, storage, filtering, and control flow. The LLM is used where interpretation and language matter.
 
 1. Summarize each new item
-2. Rank this week's summaries by relevance
+2. Rank summaries from the last 4 days by relevance
 3. Write the email subject and overview
 
 Model output is returned as structured JSON so the rest of the application can store it and render the email in code.
 
 ## Database 🗄️
 
-PostgreSQL stores collected articles and filings, tracks what has already been summarized, and keeps state for each weekly run. SQL queries decide which items are new, which belong to the current week, and whether a digest has already been sent.
+PostgreSQL stores collected articles and filings, tracks what has already been summarized, and keeps state for each run. SQL queries decide which items are new, which fall in the last 4 days, and whether today's digest has already been sent.
 
 ## What I Learned 📚
 
@@ -63,11 +63,11 @@ Predictable work belongs in code. Python and SQL own fetching, storage, and sche
 ## Future Improvements 🚀
 
 - Improve relevance ranking
-- Add monitoring when a weekly run fails
+- Add monitoring when a scheduled run fails
 - Add automated tests for the pipeline
 
 
 
 ## Project Status ✅
 
-The core pipeline is deployed and runs automatically each week. This is a completed portfolio project. Future work would extend it, not finish the core system.
+The core pipeline is deployed and runs automatically every 4 days. This is a completed portfolio project. Future work would extend it, not finish the core system.

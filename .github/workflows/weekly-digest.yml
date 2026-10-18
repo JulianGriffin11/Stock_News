@@ -1,12 +1,13 @@
-name: Weekly digest
+name: Digest
 
 on:
   schedule:
-    - cron: "0 12 * * 0"
+    # 12:00 UTC on the 1st, 5th, 9th, 13th, 17th, 21st, 25th, and 29th.
+    - cron: "0 12 */4 * *"
   workflow_dispatch:
     inputs:
       force:
-        description: Replace this week's digest and send again
+        description: Replace today's digest and send again
         type: boolean
         default: false
 
@@ -23,7 +24,7 @@ jobs:
       - run: uv run alembic upgrade head
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      - name: Run weekly digest
+      - name: Run digest
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

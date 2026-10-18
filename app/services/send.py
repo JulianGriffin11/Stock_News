@@ -1,4 +1,4 @@
-"""Send this week's stored email via Resend. Fail the job if send fails."""
+"""Send today's stored email via Resend. Fail the job if send fails."""
 
 from __future__ import annotations
 

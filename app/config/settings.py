@@ -1,4 +1,4 @@
-"""App settings: .env, profile, and the 7-day window."""
+"""App settings: .env, profile, and the 4-day window."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def load_profile() -> Profile:
 
 
 class Settings:
-    window_days = 7
+    window_days = 4
 
     def __init__(self) -> None:
         self.repo_root = Path(__file__).resolve().parents[2]
@@ -123,9 +123,8 @@ class Settings:
         return datetime.now(UTC) - timedelta(days=self.window_days)
 
     def week_start(self) -> date:
-        """Monday of the current UTC week — stable digest_runs key."""
-        today = datetime.now(UTC).date()
-        return today - timedelta(days=today.weekday())
+        """UTC date of this run — one digest_runs row per scheduled day."""
+        return datetime.now(UTC).date()
 
     def write_json(self, filename: str, items: list[dict]) -> Path:
         self.data_dir.mkdir(parents=True, exist_ok=True)

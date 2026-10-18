@@ -29,12 +29,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     rank_parser = sub.add_parser(
         "rank",
-        help="Rank this week's summaries onto digest_runs",
+        help="Rank this period's summaries onto digest_runs",
     )
     rank_parser.add_argument(
         "--force",
         action="store_true",
-        help="Replace an existing digest_run for this week",
+        help="Replace an existing digest_run for today",
     )
     email_parser = sub.add_parser(
         "write-email",
@@ -43,16 +43,16 @@ def main(argv: list[str] | None = None) -> int:
     email_parser.add_argument(
         "--force",
         action="store_true",
-        help="Replace an existing unsent email for this week",
+        help="Replace an existing unsent email for today",
     )
     send_parser = sub.add_parser(
         "send",
-        help="Send this week's stored email via Resend",
+        help="Send today's stored email via Resend",
     )
     send_parser.add_argument(
         "--force",
         action="store_true",
-        help="Send again even if this week already went out",
+        help="Send again even if today's digest already went out",
     )
     run_parser = sub.add_parser(
         "run-weekly",
@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument(
         "--force",
         action="store_true",
-        help="Replace this week's digest and send again",
+        help="Replace today's digest and send again",
     )
     args = parser.parse_args(argv)
     configure_logging(verbose=args.verbose)
