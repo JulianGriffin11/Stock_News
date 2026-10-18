@@ -1,4 +1,4 @@
-"""Agent 2: rank this week's summaries into a digest_run."""
+"""Agent 2: rank this period's summaries into a digest_run."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from app.db.models import ItemSummaryRow
 from app.db.queries import list_week_summaries, upsert_run
 
 INSTRUCTIONS = """\
-You rank this week's item summaries for one investor digest.
+You rank item summaries from the last 4 days for one investor digest.
 
 Pick the 5–10 most material items. If fewer than 5 exist, rank all of them.
 Return picks in priority order. summary_id must be copied exactly from the input.
@@ -73,7 +73,7 @@ def run_rank(
     summaries = list_week_summaries(settings.window_start())
     candidates = len(summaries)
     if not summaries:
-        log.warning("skipped no summaries in 7-day window — run summarize first")
+        log.warning("skipped no summaries in 4-day window — run summarize first")
         return 0
 
     out = parse_response(

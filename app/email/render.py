@@ -1,4 +1,4 @@
-"""Render the weekly digest from structured copy + ranked rows."""
+"""Render the digest from structured copy + ranked rows."""
 
 from __future__ import annotations
 
